@@ -1,0 +1,24 @@
+{
+  "_description": "SNAP (Food Stamps) — monthly grocery funds on an EBT card. Eligibility and benefit amounts calculated by PolicyEngine.",
+  "id": "snap",
+  "name": "SNAP (Supplemental Nutrition Assistance Program)",
+  "common_name": "Food Stamps",
+  "agency": "USDA Food and Nutrition Service",
+  "description": "Monthly funds loaded onto an EBT card to buy groceries at authorized retailers.",
+  "documents_needed": [
+    "Proof of identity (driver's license, state ID)",
+    "Proof of income (pay stubs, tax return, benefit letters)",
+    "Proof of residency (utility bill, lease agreement)",
+    "Social Security numbers for all household members",
+    "Proof of assets (bank statements) — if applicable"
+  ],
+  "application": {
+    "federal_url": "https://www.fns.usda.gov/snap/recipient/eligibility",
+    "state_urls": {
+      "CA": "https://benefitscal.com",
+      "TX": "https://www.yourtexasbenefits.com",
+      "NY": "https://mybenefits.ny.gov",
+      "FL": "https://myaccess.myflfamilies.com"
+    }
+  }
+}

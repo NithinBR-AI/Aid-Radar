@@ -1,0 +1,28 @@
+# Monitor Agent schedule and notification settings.
+# Controls how often the agent re-checks eligibility and when to alert users.
+
+schedule:
+  # Cron expression: run at 8am on the 1st of every month
+  cron: "0 8 1 * *"
+  timezone: "America/New_York"
+
+thresholds:
+  # Only notify if benefit estimate changed by more than this percentage
+  benefit_change_pct: 10
+  # Days before a renewal deadline to send a reminder
+  renewal_reminder_days: 30
+
+notifications:
+  # Where to send alerts (extend as needed)
+  channels:
+    - type: slack
+      enabled: false
+    - type: email
+      enabled: false
+    - type: console
+      enabled: true
+
+# Annual data refresh: FPL guidelines typically update in January
+data_refresh:
+  fpl_source: "https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines"
+  check_frequency: "monthly"

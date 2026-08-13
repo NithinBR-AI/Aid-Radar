@@ -1,0 +1,31 @@
+{
+  "_description": "TANF (Temporary Assistance for Needy Families) — cash assistance for families with children. Eligibility calculated by PolicyEngine.",
+  "id": "tanf",
+  "name": "TANF (Temporary Assistance for Needy Families)",
+  "common_name": "Cash Assistance / Welfare",
+  "agency": "HHS Administration for Children and Families",
+  "description": "Provides temporary cash assistance to low-income families with children to cover basic needs like rent, utilities, and personal essentials.",
+  "state_program_names": {
+    "CA": "CalWORKs",
+    "TX": "TANF Texas",
+    "NY": "Family Assistance",
+    "FL": "Temporary Cash Assistance"
+  },
+  "documents_needed": [
+    "Proof of identity",
+    "Birth certificates for children",
+    "Proof of income for all household members",
+    "Proof of residency",
+    "Social Security numbers for all household members",
+    "Proof of assets (bank statements)"
+  ],
+  "application": {
+    "federal_url": "https://www.acf.hhs.gov/ofa/programs/tanf",
+    "state_urls": {
+      "CA": "https://www.cdss.ca.gov/calworks",
+      "TX": "https://www.yourtexasbenefits.com",
+      "NY": "https://mybenefits.ny.gov",
+      "FL": "https://myaccess.myflfamilies.com"
+    }
+  }
+}

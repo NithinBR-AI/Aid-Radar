@@ -1,0 +1,23 @@
+{
+  "_description": "WIC — nutrition program for pregnant/postpartum women, infants, and children under 5. Eligibility calculated by PolicyEngine.",
+  "id": "wic",
+  "name": "WIC (Women, Infants, and Children)",
+  "common_name": "WIC",
+  "agency": "USDA Food and Nutrition Service",
+  "description": "Provides nutritious foods, nutrition education, breastfeeding support, and healthcare referrals for pregnant/postpartum women and children under 5.",
+  "documents_needed": [
+    "Proof of identity",
+    "Proof of income or proof of SNAP/Medicaid/TANF enrollment",
+    "Proof of residency",
+    "Proof of pregnancy or child's birth certificate"
+  ],
+  "application": {
+    "federal_url": "https://www.fns.usda.gov/wic",
+    "state_urls": {
+      "CA": "https://www.myfamily.wic.ca.gov",
+      "TX": "https://texaswic.org",
+      "NY": "https://www.health.ny.gov/prevention/nutrition/wic/",
+      "FL": "https://www.floridahealth.gov/programs-and-services/wic/"
+    }
+  }
+}

@@ -1,0 +1,39 @@
+# Master list of benefit programs AidRadar checks against.
+# Eligibility for 7 programs is calculated by PolicyEngine (policyengine-us).
+# LIHEAP uses a simple FPL-based fallback since PolicyEngine doesn't model it.
+# Application URLs and documents are stored in src/data/programs/<id>.json.
+# Set enabled: false to skip a program without removing it.
+
+programs:
+  - id: snap
+    enabled: true
+    priority: 1
+
+  - id: medicaid
+    enabled: true
+    priority: 2
+
+  - id: wic
+    enabled: true
+    priority: 3
+
+  - id: tanf
+    enabled: true
+    priority: 4
+
+  - id: liheap
+    enabled: true
+    priority: 5
+    engine: fallback
+
+  - id: free_school_meals
+    enabled: true
+    priority: 6
+
+  - id: lifeline
+    enabled: true
+    priority: 7
+
+  - id: ssi
+    enabled: true
+    priority: 8

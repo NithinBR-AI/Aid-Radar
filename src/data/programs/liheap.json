@@ -1,0 +1,30 @@
+{
+  "_description": "LIHEAP — helps pay heating/cooling bills. NOT covered by PolicyEngine; uses simple FPL-based check in eligibility_checker.py.",
+  "id": "liheap",
+  "name": "LIHEAP (Low Income Home Energy Assistance Program)",
+  "common_name": "Energy Assistance / Heating & Cooling Help",
+  "agency": "HHS Administration for Children and Families",
+  "description": "Helps pay heating and cooling bills, covers energy crisis situations, and funds weatherization improvements to reduce energy costs.",
+  "state_program_names": {
+    "CA": "LIHEAP / CARE / FERA",
+    "TX": "CEAP (Comprehensive Energy Assistance Program)",
+    "NY": "HEAP (Home Energy Assistance Program)",
+    "FL": "LIHEAP Florida"
+  },
+  "documents_needed": [
+    "Proof of identity",
+    "Proof of income for all household members",
+    "Most recent utility bill",
+    "Social Security numbers for all household members",
+    "Proof of residency"
+  ],
+  "application": {
+    "federal_url": "https://www.acf.hhs.gov/ocs/low-income-home-energy-assistance-program-liheap",
+    "state_urls": {
+      "CA": "https://www.csd.ca.gov/Pages/LIHEAPProgram.aspx",
+      "TX": "https://www.tdhca.texas.gov/comprehensive-energy-assistance-program-ceap-program-guidance",
+      "NY": "https://otda.ny.gov/programs/heap/",
+      "FL": "https://www.floridajobs.org/community-planning-and-development/community-services/low-income-home-energy-assistance-program"
+    }
+  }
+}

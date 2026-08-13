@@ -1,0 +1,18 @@
+{
+  "_description": "Free & Reduced School Meals — free meals for qualifying K-12 students. Eligibility calculated by PolicyEngine.",
+  "id": "free_school_meals",
+  "name": "National School Lunch Program / School Breakfast Program",
+  "common_name": "Free & Reduced School Meals",
+  "agency": "USDA Food and Nutrition Service",
+  "description": "Provides free or reduced-price breakfast and lunch to children at school.",
+  "documents_needed": [
+    "Household income information",
+    "Names of all household members",
+    "Child's school information",
+    "OR proof of SNAP/TANF enrollment (for categorical eligibility)"
+  ],
+  "application": {
+    "federal_url": "https://www.fns.usda.gov/cn/applying-free-and-reduced-price-school-meals",
+    "notes": "Applications are submitted through the child's school district, typically at the start of each school year. Ask the school office for the form."
+  }
+}

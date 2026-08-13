@@ -1,0 +1,31 @@
+{
+  "_description": "Medicaid — free/low-cost health coverage. Eligibility calculated by PolicyEngine with state-specific rules.",
+  "id": "medicaid",
+  "name": "Medicaid",
+  "common_name": "Medicaid / Medi-Cal / CHIP",
+  "agency": "Centers for Medicare & Medicaid Services (CMS)",
+  "description": "Free or low-cost health coverage including doctor visits, hospital stays, prescriptions, mental health, and preventive care.",
+  "state_program_names": {
+    "CA": "Medi-Cal",
+    "TX": "Texas Medicaid",
+    "NY": "Medicaid / Essential Plan",
+    "FL": "Florida Medicaid"
+  },
+  "documents_needed": [
+    "Proof of identity",
+    "Proof of income (pay stubs, tax return)",
+    "Proof of residency",
+    "Social Security number",
+    "Immigration status documentation (if applicable)",
+    "Proof of pregnancy (if applicable)"
+  ],
+  "application": {
+    "federal_url": "https://www.healthcare.gov/medicaid-chip/getting-medicaid-chip/",
+    "state_urls": {
+      "CA": "https://www.coveredca.com",
+      "TX": "https://www.yourtexasbenefits.com",
+      "NY": "https://nystateofhealth.ny.gov",
+      "FL": "https://myaccess.myflfamilies.com"
+    }
+  }
+}

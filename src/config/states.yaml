@@ -1,0 +1,24 @@
+# Supported states and their specific configurations.
+# AidRadar launches with 4 states covering ~100M people.
+# Add more by creating state override entries in each program's JSON.
+
+supported_states:
+  - code: CA
+    name: California
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: TX
+    name: Texas
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: false
+
+  - code: NY
+    name: New York
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: FL
+    name: Florida
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: false

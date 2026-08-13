@@ -1,0 +1,20 @@
+{
+  "_description": "SSI (Supplemental Security Income) — monthly cash payments for disabled, blind, or elderly. Eligibility calculated by PolicyEngine.",
+  "id": "ssi",
+  "name": "SSI (Supplemental Security Income)",
+  "common_name": "SSI Disability/Aged Payments",
+  "agency": "Social Security Administration (SSA)",
+  "description": "Monthly cash payments for people who are 65+, blind, or disabled and have limited income and resources. Covers basic needs like food, clothing, and shelter.",
+  "documents_needed": [
+    "Social Security number",
+    "Birth certificate or proof of age",
+    "Proof of disability (medical records, doctor statements)",
+    "Proof of income and resources (bank statements, pay stubs)",
+    "Proof of citizenship or immigration status",
+    "Proof of living arrangements"
+  ],
+  "application": {
+    "federal_url": "https://www.ssa.gov/ssi",
+    "notes": "Apply at your local Social Security office, by phone (1-800-772-1213), or start online at ssa.gov."
+  }
+}

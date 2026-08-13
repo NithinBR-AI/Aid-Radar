@@ -1,0 +1,18 @@
+{
+  "_description": "Lifeline — FCC program providing $9.25/month discount on phone or internet. Eligibility calculated by PolicyEngine.",
+  "id": "lifeline",
+  "name": "Lifeline",
+  "common_name": "Free/Discounted Phone & Internet",
+  "agency": "Federal Communications Commission (FCC)",
+  "description": "Provides a monthly discount on phone or internet service. Eligible households get up to $9.25/month off their bill, or up to $34.25 on Tribal lands.",
+  "documents_needed": [
+    "Proof of identity",
+    "Proof of income OR proof of enrollment in qualifying program",
+    "Proof of address"
+  ],
+  "application": {
+    "federal_url": "https://www.lifelinesupport.org",
+    "universal_application": "https://nv.fcc.gov/lifeline",
+    "notes": "Apply through the National Verifier at nv.fcc.gov/lifeline — same process for all states."
+  }
+}
