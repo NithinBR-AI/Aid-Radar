@@ -8,9 +8,14 @@ secondaryBackgroundColor = "#F3F2EE"
 textColor = "#1A1A18"
 font = "sans serif"
 
+[client]
+showErrorDetails = true
+
 [server]
 headless = true
 port = 8501
+fileWatcherType = "none"
+runOnSave = false
 
 [browser]
 gatherUsageStats = false

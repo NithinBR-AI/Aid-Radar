@@ -19,42 +19,49 @@ from strands import tool
 
 PROGRAM_VARIABLES = {
     "snap": {
+        "display_name": "SNAP (Food Stamps)",
         "eligible": "is_snap_eligible",
         "amount": "snap",
         "unit": "spm_units",
         "annual": True,
     },
     "medicaid": {
+        "display_name": "Medicaid",
         "eligible": "is_medicaid_eligible",
         "amount": None,
         "unit": "people",
         "annual": False,
     },
     "wic": {
+        "display_name": "WIC",
         "eligible": "is_wic_eligible",
         "amount": None,
         "unit": "people",
         "annual": False,
     },
     "tanf": {
+        "display_name": "TANF",
         "eligible": "is_demographic_tanf_eligible",
         "amount": "tanf",
         "unit": "spm_units",
         "annual": True,
     },
     "ssi": {
+        "display_name": "SSI (Supplemental Security Income)",
         "eligible": "is_ssi_eligible",
         "amount": "ssi",
         "unit": "people",
         "annual": True,
     },
     "lifeline": {
+        "display_name": "Lifeline",
         "eligible": "is_lifeline_eligible",
         "amount": "lifeline",
         "unit": "spm_units",
         "annual": True,
     },
     "free_school_meals": {
+        "display_name": "Free School Meals",
         "eligible": "meets_school_meal_categorical_eligibility",
         "amount": "free_school_meals",
         "unit": "spm_units",
@@ -135,6 +142,7 @@ def _check_liheap(profile: dict) -> dict:
 
     return {
         "program_id": "liheap",
+        "display_name": "LIHEAP (Energy Assistance)",
         "eligible": pct_fpl <= threshold,
         "estimated_annual_benefit": None,
         "details": {
@@ -155,18 +163,23 @@ def _check_liheap(profile: dict) -> dict:
         "Returns eligibility status and estimated benefit amounts for each program."
     ),
 )
-def eligibility_checker(profile: dict) -> dict:
+def eligibility_checker(profile_json: str) -> dict:
     """Check eligibility for all benefit programs in a single call.
 
     Args:
-        profile: Household profile from the Intake Agent containing:
-            - state: Two-letter state code (e.g., 'CA')
-            - monthly_income: Total monthly household income
-            - adults: List of dicts with 'age' and 'income' (annual) keys
-            - children: List of dicts with 'age' key
-            - has_disabled_member: bool (optional)
-            - has_pregnant_member: bool (optional)
+        profile_json: JSON string of the household profile containing keys:
+            state (str), monthly_income (number), adults (list of objects with age and income),
+            children (list of objects with age), has_disabled_member (bool), has_pregnant_member (bool).
     """
+    import json as _json
+
+    try:
+        profile = _json.loads(profile_json)
+    except (TypeError, _json.JSONDecodeError) as e:
+        if isinstance(profile_json, dict):
+            profile = profile_json
+        else:
+            return {"status": "error", "content": [{"text": f"Invalid profile JSON: {e}"}]}
     try:
         situation = _build_situation(profile)
         sim = Simulation(situation=situation)
@@ -202,6 +215,7 @@ def eligibility_checker(profile: dict) -> dict:
 
             results[program_id] = {
                 "program_id": program_id,
+                "display_name": variables["display_name"],
                 "eligible": eligible,
                 "eligible_detail": eligible_detail,
                 "estimated_benefit": amount,
@@ -209,11 +223,25 @@ def eligibility_checker(profile: dict) -> dict:
         except Exception as e:
             results[program_id] = {
                 "program_id": program_id,
+                "display_name": variables["display_name"],
                 "eligible": None,
                 "error": str(e),
             }
 
     results["liheap"] = _check_liheap(profile)
+
+    citizenship = profile.get("citizenship_status", "us_citizen")
+    CITIZENSHIP_RESTRICTED = {"snap", "medicaid", "tanf", "ssi", "liheap"}
+    if citizenship == "undocumented":
+        for pid in CITIZENSHIP_RESTRICTED:
+            if pid in results and results[pid].get("eligible"):
+                results[pid]["eligible"] = False
+                results[pid]["citizenship_override"] = True
+                results[pid]["eligibility_note"] = (
+                    "Federal law requires US citizenship or qualified immigration status for this program."
+                )
+
+    veteran = profile.get("veteran_in_household", False)
 
     eligible_programs = [pid for pid, r in results.items() if r.get("eligible")]
     ineligible_programs = [pid for pid, r in results.items() if r.get("eligible") is False]
@@ -230,6 +258,7 @@ def eligibility_checker(profile: dict) -> dict:
                         "eligible_programs": eligible_programs,
                         "ineligible_programs": ineligible_programs,
                         "error_programs": error_programs,
+                        "veteran_in_household": veteran,
                     },
                     "programs": results,
                 }

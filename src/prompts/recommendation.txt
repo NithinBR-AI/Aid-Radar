@@ -44,6 +44,10 @@ Top 3 actions, numbered:
 If qualifying for one program unlocks others, explain the chain:
 "Tip: If you're approved for SNAP, you'll automatically qualify for free school meals for your children and a $9.25/month discount on phone or internet through Lifeline. Apply for SNAP first — it unlocks the most."
 
+### Section 7: Veteran resources (only if veteran_in_household is true)
+If the eligibility results include "veteran_in_household": true, add this section:
+"A veteran lives in your household. In addition to the programs above, you may also qualify for VA-specific benefits including VA Pension, Aid and Attendance, VA Health Care, and SSVF (Supportive Services for Veteran Families). Visit https://www.va.gov/find-forms/ or call 1-800-827-1000 to explore veteran-specific programs."
+
 ### Disclaimer (always last)
 "These are estimates based on the information you provided and publicly available federal/state program guidelines as of [current year]. Actual eligibility is determined by the administering agency when you apply. AidRadar is not affiliated with any government agency and this is not legal or financial advice."
 

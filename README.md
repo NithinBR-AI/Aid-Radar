@@ -9,9 +9,25 @@ Built with [Strands Agents SDK](https://github.com/strands-agents) and Amazon Be
 ## How It Works
 
 1. **Intake Agent** — Conversational interview collects household details (income, size, state, age, etc.)
-2. **Eligibility Agent** — Runs a PolicyEngine simulation to check all programs at once, with LIHEAP as a fallback
-3. **Recommendation Agent** — Generates an actionable report: eligible programs, estimated monthly benefit, documents needed, and direct application links
-4. **Monitor Agent** — Runs monthly in the background, re-checks when thresholds update, and notifies you only when your eligibility changes
+2. **Eligibility Agent** — Calls the eligibility_checker tool (PolicyEngine) to evaluate all 8 programs, then calls application_finder for each eligible program to get URLs and documents
+3. **Recommendation Agent** — Generates an actionable, 6th-grade reading level report: eligible programs, estimated monthly benefit, documents needed, cascading benefits, and direct application links
+4. **Monitor Agent** — Runs on a schedule (AWS EventBridge), re-checks eligibility when FPL thresholds or program rules change, and surfaces notifications only when your eligibility status shifts — without you doing anything
+
+## Pipeline Status
+
+- [x] Intake Agent — working (multi-turn conversational interview)
+- [x] Eligibility Agent — working (calls eligibility_checker + application_finder tools)
+- [x] Recommendation Agent — working (generates structured benefits report)
+- [x] Monitor Agent — integrated in Streamlit UI (simulates 2027 FPL threshold update)
+- [x] End-to-end CLI pipeline — working (`python -m src.main`)
+- [x] E2E test with pre-filled profiles — working (`python -m tests.test_pipeline_e2e`)
+- [x] Streamlit UI — working (`streamlit run src/app.py`): hero landing, chat intake, pipeline tracker, results dashboard, Monitor Agent demo
+- [x] Program display names — proper names in all tool output (SNAP, SSI, LIHEAP, etc.)
+- [ ] "What if" simulator — tweak income/household and see eligibility shift instantly
+- [ ] Guardrails layer — input validation, PII protection
+- [ ] DynamoDB profile store — persist profiles for Monitor Agent
+- [ ] Tests — unit tests for tools, integration tests for agents
+- [ ] Evals — LLM quality benchmarks across scenarios
 
 ## Programs Covered
 
@@ -33,9 +49,9 @@ California, Texas, New York, Florida (covering ~100M people)
 ## Tech Stack
 
 - **Agent Framework**: Strands Agents SDK (Python)
-- **LLM**: Amazon Bedrock (Claude 3.5 Sonnet)
+- **LLM**: DeepSeek V3.2 via Amazon Bedrock Mantle (OpenAI-compatible endpoint)
 - **Eligibility Engine**: [PolicyEngine](https://policyengine.org) (open-source tax & benefit microsimulation)
-- **Frontend**: Streamlit
+- **Frontend**: Streamlit (hero landing, chat intake, results dashboard, monitor demo)
 - **Data**: Application URLs and document requirements (JSON), PolicyEngine for eligibility math
 - **Storage**: Amazon S3
 - **Monitoring**: Strands `cron` tool / AWS EventBridge
@@ -45,30 +61,31 @@ California, Texas, New York, Florida (covering ~100M people)
 ```
 aid-radar/
 ├── src/
-│   ├── app.py                    # Streamlit web app
-│   ├── main.py                   # CLI entry point
-│   ├── config.py                 # Environment config
-│   ├── monitor_runner.py         # Monitor Agent standalone runner
-│   ├── config/
-│   │   ├── programs.yaml         # Toggle programs on/off
-│   │   ├── states.yaml           # Supported states
-│   │   └── monitor.yaml          # Monitor schedule & notification settings
-│   ├── agents/                   # Agent definitions (TBD)
+│   ├── app.py                      # Streamlit web app (hero, chat intake, results dashboard, monitor demo)
+│   ├── main.py                     # CLI entry point (3-agent pipeline)
+│   ├── config.py                   # Environment config (Mantle endpoint + API key)
+│   ├── monitor_runner.py           # Monitor Agent standalone runner
+│   ├── agents/
+│   │   ├── intake.py               # Intake Agent (conversational, no tools)
+│   │   ├── eligibility.py          # Eligibility Agent (eligibility_checker + application_finder)
+│   │   ├── recommendation.py       # Recommendation Agent (report generation, no tools)
+│   │   └── monitor.py              # Monitor Agent (background re-checker)
 │   ├── tools/
-│   │   ├── eligibility_checker.py  # PolicyEngine-backed eligibility for all programs
-│   │   └── application_finder.py   # Application URLs and document requirements
-│   ├── prompts/                  # Agent system prompts
+│   │   ├── eligibility_checker.py  # PolicyEngine-backed eligibility for all 8 programs
+│   │   └── application_finder.py   # State-specific application URLs and documents
+│   ├── prompts/                    # Agent system prompts
 │   │   ├── intake.txt
 │   │   ├── eligibility.txt
 │   │   ├── recommendation.txt
 │   │   └── monitor.txt
 │   ├── data/
-│   │   └── programs/            # Application URLs, documents, state program names
-│   └── output/                  # Report generation
+│   │   └── programs/              # Per-program JSON (URLs, documents, state overrides)
+│   └── output/                    # Report generation
 ├── tests/
-│   └── test_policyengine.py     # PolicyEngine integration test
+│   ├── test_policyengine.py       # PolicyEngine integration test
+│   └── test_pipeline_e2e.py       # End-to-end pipeline test (3 pre-filled profiles)
 ├── requirements.txt
-└── .streamlit/config.toml       # Custom theme
+└── .env                           # MANTLE_API_KEY, MODEL_ID, AWS_REGION
 ```
 
 ## Setup
@@ -86,17 +103,36 @@ python -m venv .venv
 # Install dependencies
 pip install -r requirements.txt
 
-# Configure AWS credentials
-aws configure
-# Set region to us-east-1
-
 # Create .env file
-echo AWS_REGION=us-east-1 > .env
-echo S3_BUCKET=your-bucket-name >> .env
+cat > .env << EOF
+AWS_REGION=us-east-1
+AWS_PROFILE=personal
+MANTLE_API_KEY=your-bedrock-mantle-api-key
+MODEL_ID=deepseek.v3.2
+EOF
 
-# Run the web app
+# Run the Streamlit web app
 streamlit run src/app.py
+
+# Run the CLI pipeline (interactive intake)
+python -m src.main
+
+# Run the E2E test (skip intake, use pre-filled profile)
+python -m tests.test_pipeline_e2e                     # default: ca_family_low_income
+python -m tests.test_pipeline_e2e tx_single_adult     # disabled veteran in TX
+python -m tests.test_pipeline_e2e ny_large_family     # family of 6 in NY
 ```
+
+## Model Access
+
+AidRadar uses Amazon Bedrock Mantle's OpenAI-compatible endpoint (`/v1/chat/completions`). Anthropic Claude models are available in Mantle but may be blocked on AISPL/India AWS accounts. DeepSeek V3.2 is the current default — it handles tool calling reliably and is available without Marketplace subscriptions.
+
+Available models tested on Mantle:
+- `deepseek.v3.2` (current default)
+- `deepseek.v3.1`
+- `google.gemma-3-12b-it`
+- `qwen.qwen3-235b-a22b-2507`
+- `mistral.mistral-large-3-675b-instruct`
 
 ## License
 
