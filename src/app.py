@@ -818,31 +818,21 @@ def show_results():
     st.markdown("---")
     st.markdown("### Monitor Agent")
     st.markdown(
-        "AidRadar doesn't stop here. The Monitor Agent runs on a schedule via AWS EventBridge — "
-        "weekly or monthly — loads your saved profile from DynamoDB, re-runs the real PolicyEngine "
-        "eligibility calculation, and sends you a notification **only when something actually changes**. "
-        "No login needed. No forms to re-fill. You get an email or SMS the moment you become eligible "
-        "for a new program, or when a benefit amount changes."
+        "Every January, federal poverty guidelines update — and millions of families silently become "
+        "eligible for programs they didn't qualify for before. AidRadar's Monitor Agent runs on a "
+        "schedule via AWS EventBridge, re-checks every saved profile against the latest PolicyEngine "
+        "rules, and **notifies only the people whose eligibility actually changed**. "
+        "No login needed. No forms to re-fill."
     )
 
-    orig_income = st.session_state.profile.get("monthly_income", 2000) if st.session_state.profile else 2000
     st.caption(
-        f"Simulate a life event: your income dropped. "
-        f"Your current income is **${orig_income:,}/month**. "
-        "Adjust the slider and run the Monitor Agent to see real eligibility changes."
-    )
-
-    monitor_income = st.slider(
-        "Simulated new monthly income ($)",
-        min_value=0,
-        max_value=int(orig_income),
-        value=max(0, int(orig_income) - 1000),
-        step=100,
-        key="monitor_income_slider",
+        "Your profile is saved in DynamoDB. Click below to simulate a scheduled Monitor Agent run — "
+        "it re-checks your eligibility against the latest PolicyEngine rules and reports any changes."
     )
 
     if st.button("Run Monitor Agent", type="primary", use_container_width=True, key="run_monitor"):
-        _run_monitor_demo(monitor_income)
+        orig_income = st.session_state.profile.get("monthly_income", 2000) if st.session_state.profile else 2000
+        _run_monitor_demo(int(orig_income))
 
     if st.session_state.monitor_notifications is not None:
         _render_monitor_notifications()

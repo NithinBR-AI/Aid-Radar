@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AidRadar — The Problem</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0A0F0D;
+    --text: #F2F5F0;
+    --text-dim: rgba(242, 245, 240, 0.55);
+    --green: #2D7A4F;
+    --green-bright: #3DBA74;
+    --amber: #E8A020;
+    --red: #E05252;
+  }
+
+  html, body {
+    width: 100%; height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    overflow: hidden;
+  }
+
+  /* ── Scenes ── */
+  .scene {
+    position: fixed; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    opacity: 0;
+    transition: opacity 0.8s ease;
+    pointer-events: none;
+  }
+  .scene.active { opacity: 1; pointer-events: auto; }
+
+  /* ── Scene 1: Stat counter ── */
+  #scene-stat .eyebrow {
+    font-size: 0.85rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 1.5rem;
+  }
+  #scene-stat .counter-wrap {
+    display: flex; align-items: baseline; gap: 0.15em;
+    line-height: 1;
+    margin-bottom: 1.2rem;
+  }
+  #scene-stat .dollar {
+    font-size: clamp(3rem, 8vw, 5.5rem);
+    font-weight: 800;
+    color: var(--green-bright);
+  }
+  #scene-stat .counter {
+    font-size: clamp(4rem, 12vw, 9rem);
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    color: var(--green-bright);
+    letter-spacing: -0.03em;
+  }
+  #scene-stat .billion {
+    font-size: clamp(2.5rem, 6vw, 4.5rem);
+    font-weight: 700;
+    color: var(--green-bright);
+    margin-left: 0.1em;
+  }
+  #scene-stat .label {
+    font-size: clamp(1rem, 2.5vw, 1.5rem);
+    color: var(--text-dim);
+    font-weight: 400;
+    text-align: center;
+    max-width: 520px;
+    line-height: 1.5;
+  }
+  #scene-stat .label strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* ── Scene 2: Human stories ── */
+  #scene-stories {
+    gap: 0;
+    padding: 3rem;
+  }
+  #scene-stories .heading {
+    font-size: clamp(0.75rem, 1.5vw, 0.9rem);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 2.5rem;
+    text-align: center;
+  }
+  .stories-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 1.1rem;
+    width: 100%;
+    max-width: 640px;
+  }
+  .story-card {
+    background: rgba(242, 245, 240, 0.04);
+    border: 1px solid rgba(242, 245, 240, 0.08);
+    border-left: 3px solid var(--amber);
+    border-radius: 10px;
+    padding: 1rem 1.3rem;
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+  }
+  .story-card.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .story-card .name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--amber);
+    margin-bottom: 0.3rem;
+  }
+  .story-card .story {
+    font-size: clamp(0.95rem, 1.8vw, 1.05rem);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  .story-card .story em {
+    color: var(--text-dim);
+    font-style: normal;
+  }
+
+  /* ── Scene 3: Payoff ── */
+  #scene-payoff {
+    text-align: center;
+    gap: 1.2rem;
+  }
+  #scene-payoff .pre {
+    font-size: clamp(0.8rem, 1.5vw, 1rem);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  #scene-payoff .main {
+    font-size: clamp(2.5rem, 7vw, 5.5rem);
+    font-weight: 900;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    color: var(--text);
+  }
+  #scene-payoff .main span {
+    color: var(--green-bright);
+  }
+  #scene-payoff .sub {
+    font-size: clamp(1rem, 2vw, 1.3rem);
+    color: var(--text-dim);
+    max-width: 480px;
+    line-height: 1.5;
+  }
+  #scene-payoff .logo-mark {
+    width: 56px; height: 56px;
+    background: var(--green);
+    border-radius: 14px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.8rem;
+    margin: 0 auto 0.5rem;
+    box-shadow: 0 0 32px rgba(45, 122, 79, 0.4);
+  }
+
+  /* ── Progress dots ── */
+  .dots {
+    position: fixed;
+    bottom: 2rem; left: 50%;
+    transform: translateX(-50%);
+    display: flex; gap: 0.5rem;
+    z-index: 10;
+  }
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: rgba(242, 245, 240, 0.2);
+    transition: background 0.4s, width 0.4s;
+  }
+  .dot.active {
+    background: var(--green-bright);
+    width: 20px;
+    border-radius: 3px;
+  }
+
+  /* ── Subtle grid overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(45,122,79,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(45,122,79,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .scene { z-index: 1; }
+</style>
+</head>
+<body>
+
+<!-- Scene 1: Counter -->
+<div class="scene active" id="scene-stat">
+  <div class="eyebrow">Every year in the United States</div>
+  <div class="counter-wrap">
+    <span class="dollar">$</span>
+    <span class="counter" id="counter">0</span>
+    <span class="billion">B</span>
+  </div>
+  <div class="label">
+    in federal benefits goes <strong>unclaimed</strong> —<br>
+    not because people don't need them
+  </div>
+</div>
+
+<!-- Scene 2: Stories -->
+<div class="scene" id="scene-stories">
+  <div class="heading">Because they don't know they exist</div>
+  <div class="stories-grid">
+    <div class="story-card" id="s1">
+      <div class="name">Maria · California</div>
+      <div class="story">Working two jobs. Qualified for $480/mo in SNAP. <em>Never applied. No one told her.</em></div>
+    </div>
+    <div class="story-card" id="s2">
+      <div class="name">James · Texas</div>
+      <div class="story">Disabled at 61. Missed $914/mo in SSI for 3 years. <em>The form was 27 pages long.</em></div>
+    </div>
+    <div class="story-card" id="s3">
+      <div class="name">The Rodriguez Family · Florida</div>
+      <div class="story">Two kids under 5. Eligible for WIC nutrition support. <em>Didn't know the program existed.</em></div>
+    </div>
+    <div class="story-card" id="s4">
+      <div class="name">Linda · New York</div>
+      <div class="story">Senior on fixed income. Heating bills eating her savings. <em>LIHEAP could have helped. Nobody asked.</em></div>
+    </div>
+  </div>
+</div>
+
+<!-- Scene 3: Payoff -->
+<div class="scene" id="scene-payoff">
+  <div class="logo-mark">🧭</div>
+  <div class="pre">Introducing</div>
+  <div class="main"><span>Aid</span>Radar</div>
+  <div class="sub">A 2-minute conversation. A real answer. Benefits people didn't know they had.</div>
+</div>
+
+<!-- Progress dots -->
+<div class="dots">
+  <div class="dot active" id="dot-0"></div>
+  <div class="dot" id="dot-1"></div>
+  <div class="dot" id="dot-2"></div>
+</div>
+
+<script>
+  const scenes = ['scene-stat', 'scene-stories', 'scene-payoff'];
+  const dots = ['dot-0', 'dot-1', 'dot-2'];
+  let current = 0;
+
+  function goTo(idx) {
+    document.getElementById(scenes[current]).classList.remove('active');
+    document.getElementById(dots[current]).classList.remove('active');
+    current = idx;
+    document.getElementById(scenes[current]).classList.add('active');
+    document.getElementById(dots[current]).classList.add('active');
+  }
+
+  // Counter animation
+  function animateCounter() {
+    const el = document.getElementById('counter');
+    const target = 60;
+    const duration = 2200;
+    const start = performance.now();
+    function tick(now) {
+      const p = Math.min((now - start) / duration, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(ease * target);
+      if (p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+
+  // Story cards stagger
+  function showStories() {
+    const cards = ['s1','s2','s3','s4'];
+    cards.forEach((id, i) => {
+      setTimeout(() => {
+        document.getElementById(id).classList.add('visible');
+      }, i * 500);
+    });
+  }
+
+  animateCounter();
+
+  document.addEventListener('click', () => {
+    if (current < scenes.length - 1) {
+      goTo(current + 1);
+      if (current === 1) setTimeout(showStories, 400);
+    }
+  });
+</script>
+</body>
+</html>
