@@ -17,9 +17,8 @@ from the eligibility results passed in the prompt.
 import os
 
 from strands import Agent
-from strands.models.openai import OpenAIModel
 
-from src.config import MODEL_ID, MANTLE_API_KEY, MANTLE_BASE_URL
+from src.config import create_mantle_model
 
 _PROMPT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
 
@@ -30,19 +29,4 @@ def _load_prompt() -> str:
 
 
 def create_recommendation_agent() -> Agent:
-    """Create and return a configured Recommendation Agent."""
-    model = OpenAIModel(
-        client_args={
-            "base_url": MANTLE_BASE_URL,
-            "api_key": MANTLE_API_KEY,
-            "default_headers": {"openai-project": "default"},
-        },
-        model_id=MODEL_ID,
-        params={"temperature": 0.4},
-    )
-
-    return Agent(
-        model=model,
-        system_prompt=_load_prompt(),
-        tools=[],
-    )
+    return Agent(model=create_mantle_model(0.4), system_prompt=_load_prompt(), tools=[])

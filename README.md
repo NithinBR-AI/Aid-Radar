@@ -6,28 +6,18 @@ Over $60 billion in federal benefits go unclaimed every year — not because peo
 
 Built with [Strands Agents SDK](https://github.com/strands-agents) and Amazon Bedrock for the [Agents for Humans](https://agentsforhumans.devpost.com/) hackathon — Good Neighbor Track.
 
+## Architecture
+
+[View Architecture Diagram](docs/architecture.html)
+
 ## How It Works
 
 1. **Intake Agent** — Conversational interview collects household details (income, size, state, age, etc.)
 2. **Eligibility Agent** — Calls the eligibility_checker tool (PolicyEngine) to evaluate all 8 programs, then calls application_finder for each eligible program to get URLs and documents
 3. **Recommendation Agent** — Generates an actionable, 6th-grade reading level report: eligible programs, estimated monthly benefit, documents needed, cascading benefits, and direct application links
-4. **Monitor Agent** — Runs on a schedule (AWS EventBridge), re-checks eligibility when FPL thresholds or program rules change, and surfaces notifications only when your eligibility status shifts — without you doing anything
+4. **Monitor Agent** — Runs on a schedule (AWS EventBridge), loads your saved profile from DynamoDB, re-runs PolicyEngine, diffs the new results against your stored snapshot, and notifies you only when eligibility actually changes — without you doing anything
+5. **What If Simulator** — Sliders on the results page let you explore how income or household size changes would affect your eligibility, using the same real PolicyEngine calculation with no LLM involved
 
-## Pipeline Status
-
-- [x] Intake Agent — working (multi-turn conversational interview)
-- [x] Eligibility Agent — working (calls eligibility_checker + application_finder tools)
-- [x] Recommendation Agent — working (generates structured benefits report)
-- [x] Monitor Agent — integrated in Streamlit UI (simulates 2027 FPL threshold update)
-- [x] End-to-end CLI pipeline — working (`python -m src.main`)
-- [x] E2E test with pre-filled profiles — working (`python -m tests.test_pipeline_e2e`)
-- [x] Streamlit UI — working (`streamlit run src/app.py`): hero landing, chat intake, pipeline tracker, results dashboard, Monitor Agent demo
-- [x] Program display names — proper names in all tool output (SNAP, SSI, LIHEAP, etc.)
-- [ ] "What if" simulator — tweak income/household and see eligibility shift instantly
-- [ ] Guardrails layer — input validation, PII protection
-- [ ] DynamoDB profile store — persist profiles for Monitor Agent
-- [ ] Tests — unit tests for tools, integration tests for agents
-- [ ] Evals — LLM quality benchmarks across scenarios
 
 ## Programs Covered
 
@@ -53,8 +43,8 @@ California, Texas, New York, Florida (covering ~100M people)
 - **Eligibility Engine**: [PolicyEngine](https://policyengine.org) (open-source tax & benefit microsimulation)
 - **Frontend**: Streamlit (hero landing, chat intake, results dashboard, monitor demo)
 - **Data**: Application URLs and document requirements (JSON), PolicyEngine for eligibility math
-- **Storage**: Amazon S3
-- **Monitoring**: Strands `cron` tool / AWS EventBridge
+- **Storage**: Amazon DynamoDB (household profiles + eligibility snapshots, 90-day TTL)
+- **Monitoring**: AWS EventBridge (scheduled Monitor Agent runs)
 
 ## Project Structure
 
@@ -72,7 +62,8 @@ aid-radar/
 │   │   └── monitor.py              # Monitor Agent (background re-checker)
 │   ├── tools/
 │   │   ├── eligibility_checker.py  # PolicyEngine-backed eligibility for all 8 programs
-│   │   └── application_finder.py   # State-specific application URLs and documents
+│   │   ├── application_finder.py   # State-specific application URLs and documents
+│   │   └── profile_store.py        # DynamoDB persistence (save/load/update profiles)
 │   ├── prompts/                    # Agent system prompts
 │   │   ├── intake.txt
 │   │   ├── eligibility.txt
@@ -80,10 +71,11 @@ aid-radar/
 │   │   └── monitor.txt
 │   ├── data/
 │   │   └── programs/              # Per-program JSON (URLs, documents, state overrides)
-│   └── output/                    # Report generation
+│   └── config/                    # Reference YAML configs (programs, states, monitor schedule)
+├── evals/
+│   └── evals.py                   # 10-profile eval suite (tool accuracy + 3 agent quality evals)
 ├── tests/
-│   ├── test_policyengine.py       # PolicyEngine integration test
-│   └── test_pipeline_e2e.py       # End-to-end pipeline test (3 pre-filled profiles)
+│   └── test_policyengine.py       # PolicyEngine integration test
 ├── requirements.txt
 └── .env                           # MANTLE_API_KEY, MODEL_ID, AWS_REGION
 ```
@@ -92,7 +84,7 @@ aid-radar/
 
 ```bash
 # Clone the repo
-git clone https://github.com/YOUR_USERNAME/aid-radar.git
+git clone https://github.com/NithinBR-AI/aid-radar.git
 cd aid-radar
 
 # Create virtual environment
@@ -117,10 +109,8 @@ streamlit run src/app.py
 # Run the CLI pipeline (interactive intake)
 python -m src.main
 
-# Run the E2E test (skip intake, use pre-filled profile)
-python -m tests.test_pipeline_e2e                     # default: ca_family_low_income
-python -m tests.test_pipeline_e2e tx_single_adult     # disabled veteran in TX
-python -m tests.test_pipeline_e2e ny_large_family     # family of 6 in NY
+# Run evals (10 profiles × tool accuracy + 3 agent quality checks)
+python -m evals.evals
 ```
 
 ## Model Access
@@ -133,6 +123,39 @@ Available models tested on Mantle:
 - `google.gemma-3-12b-it`
 - `qwen.qwen3-235b-a22b-2507`
 - `mistral.mistral-large-3-675b-instruct`
+
+## What's Next
+
+AidRadar was built for the [Agents for Humans](https://agentsforhumans.devpost.com/) hackathon but the problem it solves is real and ongoing.
+
+### Stage 1 — Hackathon MVP (current)
+- Streamlit UI, 4 states, 8 federal programs
+- DynamoDB profile store with 90-day TTL
+- Monitor Agent with real PolicyEngine diff
+- What If simulator for income/household exploration
+
+### Stage 2 — Pilot Product
+- React/Next.js frontend — mobile-first, accessible on low-end devices and slow connections (the population most likely to need these benefits)
+- Real notifications — email/SMS delivery via Amazon SNS when the Monitor Agent detects eligibility changes
+- User accounts — persistent profiles across sessions with opt-in notification preferences
+- Expand to 10+ states, 15+ programs (CHIP, EITC, Section 8/HCV, utility disconnection protection)
+- Caseworker dashboard — social workers manage multiple client profiles and track application status in bulk
+
+### Stage 3 — Scale
+- All 50 states
+- Multilingual support — Spanish, Mandarin, Vietnamese (languages most common among eligible non-English speakers)
+- Application assistance — pre-fill forms using the household profile collected during intake
+- API layer for integration with government portals and nonprofit CRMs
+- Anonymized aggregate data to help policymakers understand where benefits go unclaimed and why
+
+### Data Architecture Evolution
+
+| Stage | Storage | Rationale |
+|---|---|---|
+| 1 — MVP | DynamoDB | Zero ops, pay-per-request, fits hackathon scale |
+| 2 — Pilot | DynamoDB + PostgreSQL (RDS) | Postgres for user accounts, caseworker relationships, and application tracking; DynamoDB retained for ephemeral eligibility snapshots |
+| 3 — Scale | PostgreSQL (primary) + DynamoDB (cache) + Redshift/Athena (analytics) | Full relational model for transactional data, separate analytics layer for policy insights and aggregate reporting |
+- **Production frontend** — migrate from Streamlit to a proper React/Next.js web app with mobile-first design, accessible to users on low-end devices and slow connections (the population most likely to need these benefits)
 
 ## License
 

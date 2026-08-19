@@ -1,0 +1,538 @@
+<title>AidRadar Architecture</title>
+<style>
+  :root {
+    --bg: #FFFFFF;
+    --bg-card: #FFFFFF;
+    --bg-aws: #FFF8EE;
+    --border: #C0CDD8;
+    --border-aws: #FF9900;
+    --text-primary: #0A1520;
+    --text-secondary: #2A4060;
+    --text-muted: #5A7090;
+    --navy: #0F1B2D;
+    --orange: #FF9900;
+    --green: #2D7A4F;
+    --green-light: #E8F5EC;
+    --slate: #4A6080;
+    --slate-light: #EEF2F7;
+    --red: #C0392B;
+    --connector: #B0BEC5;
+    --font-mono: 'Courier New', Courier, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  /* Force light mode — diagram is for judges/docs, always readable */
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    padding: 2rem;
+    min-height: 100vh;
+  }
+
+  .page-header {
+    text-align: center;
+    margin-bottom: 2.5rem;
+  }
+  .page-header h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    letter-spacing: -0.02em;
+  }
+  .page-header .sub {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 0.3rem;
+    font-family: var(--font-mono);
+  }
+
+  /* Main diagram grid */
+  .diagram {
+    display: grid;
+    grid-template-columns: 130px 1fr 220px;
+    gap: 0;
+    align-items: start;
+    max-width: 1050px;
+    margin: 0 auto;
+  }
+
+  /* ---- User column ---- */
+  .user-col {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-top: 4rem;
+    gap: 0.5rem;
+  }
+  .user-icon {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--slate-light);
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.6rem;
+  }
+  .user-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-align: center;
+  }
+  .user-sub {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    text-align: center;
+    font-family: var(--font-mono);
+    max-width: 100px;
+  }
+
+  /* ---- Agents column ---- */
+  .agents-col {
+    padding: 0 1.5rem;
+    position: relative;
+  }
+
+  .aws-boundary {
+    border: 2px dashed var(--border-aws);
+    border-radius: 16px;
+    padding: 1.2rem 1.2rem 1.2rem;
+    background: var(--bg-aws);
+    position: relative;
+  }
+  .aws-badge {
+    position: absolute;
+    top: -12px;
+    right: 16px;
+    background: var(--orange);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 0.2rem 0.7rem;
+    border-radius: 4px;
+    letter-spacing: 0.06em;
+    font-family: var(--font-mono);
+  }
+  .aws-sub-badge {
+    position: absolute;
+    top: -12px;
+    left: 16px;
+    background: var(--navy);
+    color: #8AABCC;
+    font-size: 0.6rem;
+    font-weight: 600;
+    padding: 0.2rem 0.7rem;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+  }
+
+  .strands-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-family: var(--font-mono);
+    margin-bottom: 0.8rem;
+    padding-left: 2px;
+  }
+
+  .agents-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .agent-card {
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.8rem;
+    position: relative;
+  }
+  .agent-card.trigger {
+    border-left: 3px solid var(--green);
+  }
+  .agent-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .agent-icon.intake  { background: #E8F0FF; }
+  .agent-icon.elig    { background: var(--green-light); }
+  .agent-icon.rec     { background: #FFF3E0; }
+  .agent-icon.mon     { background: #F3E5F5; }
+
+  .agent-info { flex: 1; min-width: 0; }
+  .agent-name {
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+  .agent-desc {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 0.2rem;
+    line-height: 1.35;
+    font-family: var(--font-mono);
+  }
+  .agent-tag {
+    font-size: 0.58rem;
+    font-weight: 700;
+    padding: 0.12rem 0.45rem;
+    border-radius: 3px;
+    font-family: var(--font-mono);
+    letter-spacing: 0.04em;
+    align-self: center;
+    flex-shrink: 0;
+  }
+  .tag-llm { background: var(--green-light); color: var(--green); }
+  .tag-tool { background: #E8F0FF; color: #1A56DB; }
+  .tag-sched { background: #F3E5F5; color: #7B1FA2; }
+
+  .flow-arrow {
+    text-align: center;
+    color: var(--connector);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0.15rem 0;
+    user-select: none;
+  }
+
+  /* Bedrock row inside boundary */
+  .bedrock-row {
+    margin-top: 1rem;
+    padding-top: 0.9rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+  }
+  .bedrock-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #FF9900, #FFB84D);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+  .bedrock-info .agent-name { font-size: 0.78rem; }
+  .bedrock-info .agent-desc { font-size: 0.66rem; }
+
+  /* EventBridge row */
+  .eventbridge-row {
+    margin-top: 0.6rem;
+    padding: 0.6rem 0.75rem;
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+  }
+  .eb-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #E91E63, #AD1457);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    flex-shrink: 0;
+  }
+  .eb-text {
+    font-size: 0.68rem;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+  }
+  .eb-text strong { color: var(--text-primary); font-size: 0.72rem; }
+
+  /* ---- Tools column ---- */
+  .tools-col {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding-top: 0.2rem;
+  }
+
+  .tool-group-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    padding-left: 2px;
+    margin-top: 0.4rem;
+  }
+  .tool-group-label:first-child { margin-top: 0; }
+
+  .tool-card {
+    background: var(--bg-card);
+    border: 1.5px solid var(--border);
+    border-radius: 8px;
+    padding: 0.55rem 0.8rem;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+  .tool-card.policy { border-left: 3px solid var(--green); }
+  .tool-card.aws-svc { border-left: 3px solid var(--orange); }
+  .tool-card.ui { border-left: 3px solid #1A56DB; }
+
+  .tool-emoji { font-size: 1rem; flex-shrink: 0; }
+  .tool-info { min-width: 0; }
+  .tool-name {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+  }
+  .tool-desc {
+    font-size: 0.62rem;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    line-height: 1.3;
+    margin-top: 0.1rem;
+  }
+
+  /* Connector lines using SVG overlay approach via CSS pseudo */
+  .connector-horiz {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+  .conn-line {
+    height: 1px;
+    background: var(--connector);
+    flex: 1;
+  }
+  .conn-arrow {
+    color: var(--connector);
+    font-size: 0.75rem;
+    line-height: 1;
+  }
+
+  /* Legend */
+  .legend {
+    max-width: 1050px;
+    margin: 1.5rem auto 0;
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 0.8rem 1rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .legend-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-family: var(--font-mono);
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 2px;
+    flex-shrink: 0;
+  }
+</style>
+
+<div class="page-header">
+  <h1>AidRadar — System Architecture</h1>
+  <div class="sub">Strands Agents SDK · Amazon Bedrock · PolicyEngine · Streamlit</div>
+</div>
+
+<div class="diagram">
+
+  <!-- USER -->
+  <div class="user-col">
+    <div class="user-icon">🧑</div>
+    <div class="user-label">User</div>
+    <div class="user-sub">Streamlit Web UI</div>
+
+    <div style="margin-top:1.2rem;display:flex;flex-direction:column;align-items:center;gap:0.3rem;">
+      <div style="width:1px;height:30px;background:var(--connector);"></div>
+      <div style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">10 questions</div>
+      <div style="font-size:0.8rem;color:var(--connector);">→</div>
+    </div>
+
+    <div style="margin-top:5.5rem;display:flex;flex-direction:column;align-items:center;gap:0.3rem;">
+      <div style="font-size:0.8rem;color:var(--connector);">←</div>
+      <div style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">benefit report</div>
+      <div style="width:1px;height:30px;background:var(--connector);"></div>
+    </div>
+  </div>
+
+  <!-- AGENTS -->
+  <div class="agents-col">
+    <div class="aws-boundary">
+      <div class="aws-sub-badge">Amazon Bedrock Mantle</div>
+      <div class="aws-badge">AWS</div>
+
+      <div class="strands-label">Strands Agents Pipeline</div>
+
+      <div class="agents-stack">
+        <div class="agent-card trigger">
+          <div class="agent-icon intake">🎙️</div>
+          <div class="agent-info">
+            <div class="agent-name">Intake Agent</div>
+            <div class="agent-desc">Conversational interview<br>Extracts household profile JSON</div>
+          </div>
+          <div class="agent-tag tag-llm">LLM only</div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
+        <div class="agent-card">
+          <div class="agent-icon elig">✅</div>
+          <div class="agent-info">
+            <div class="agent-name">Eligibility Agent</div>
+            <div class="agent-desc">Calls eligibility_checker tool<br>Calls application_finder tool</div>
+          </div>
+          <div class="agent-tag tag-tool">2 tools</div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
+        <div class="agent-card">
+          <div class="agent-icon rec">📋</div>
+          <div class="agent-info">
+            <div class="agent-name">Recommendation Agent</div>
+            <div class="agent-desc">Generates actionable report<br>Benefits, amounts, apply links</div>
+          </div>
+          <div class="agent-tag tag-llm">LLM only</div>
+        </div>
+
+        <div class="flow-arrow">↓ <span style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">scheduled</span></div>
+
+        <div class="agent-card">
+          <div class="agent-icon mon">🔔</div>
+          <div class="agent-info">
+            <div class="agent-name">Monitor Agent</div>
+            <div class="agent-desc">Re-checks eligibility on FPL<br>threshold changes · notifies user</div>
+          </div>
+          <div class="agent-tag tag-sched">EventBridge</div>
+        </div>
+
+        <div class="bedrock-row">
+          <div class="bedrock-icon">⚡</div>
+          <div class="bedrock-info">
+            <div class="agent-name">DeepSeek V3.2</div>
+            <div class="agent-desc">OpenAI-compatible endpoint · tool calling</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="eventbridge-row">
+        <div class="eb-icon">⏰</div>
+        <div class="eb-text"><strong>AWS EventBridge</strong> — scheduled cron trigger for Monitor Agent</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOOLS & SERVICES -->
+  <div class="tools-col">
+    <div class="tool-group-label">Eligibility Tools</div>
+
+    <div class="tool-card policy">
+      <div class="tool-emoji">⚖️</div>
+      <div class="tool-info">
+        <div class="tool-name">PolicyEngine</div>
+        <div class="tool-desc">7 programs · SNAP, Medicaid,<br>WIC, TANF, SSI, Lifeline, FSM</div>
+      </div>
+    </div>
+
+    <div class="tool-card policy">
+      <div class="tool-emoji">📊</div>
+      <div class="tool-info">
+        <div class="tool-name">FPL Calculator</div>
+        <div class="tool-desc">LIHEAP fallback · state-specific<br>income thresholds</div>
+      </div>
+    </div>
+
+    <div class="tool-card policy">
+      <div class="tool-emoji">🔗</div>
+      <div class="tool-info">
+        <div class="tool-name">Application Finder</div>
+        <div class="tool-desc">State URLs · document<br>requirements per program</div>
+      </div>
+    </div>
+
+    <div class="tool-group-label" style="margin-top:0.8rem;">AWS Services</div>
+
+    <div class="tool-card aws-svc">
+      <div class="tool-emoji">🗄️</div>
+      <div class="tool-info">
+        <div class="tool-name">DynamoDB</div>
+        <div class="tool-desc">Profiles + eligibility snapshots<br>90-day TTL · Monitor Agent store</div>
+      </div>
+    </div>
+
+
+    <div class="tool-group-label" style="margin-top:0.8rem;">Frontend</div>
+
+    <div class="tool-card ui">
+      <div class="tool-emoji">🖥️</div>
+      <div class="tool-info">
+        <div class="tool-name">Streamlit</div>
+        <div class="tool-desc">Chat intake · results dashboard<br>Monitor Agent demo</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Legend -->
+<div class="legend">
+  <span class="legend-title">Legend</span>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--green);"></div>
+    PolicyEngine / FPL tools
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:var(--orange);"></div>
+    AWS services
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:#1A56DB;"></div>
+    Frontend
+  </div>
+  <div class="legend-item">
+    <div class="legend-dot" style="background:#7B1FA2;"></div>
+    Scheduled / EventBridge
+  </div>
+  <div class="legend-item" style="margin-left:auto;">
+    <span style="font-family:var(--font-mono);font-size:0.65rem;color:var(--text-muted);">Good Neighbor Track · AWS Agents for Humans Hackathon</span>
+  </div>
+</div>

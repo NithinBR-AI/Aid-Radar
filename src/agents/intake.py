@@ -13,9 +13,8 @@ this agent repeatedly until the agent outputs a valid JSON profile block.
 import os
 
 from strands import Agent
-from strands.models.openai import OpenAIModel
 
-from src.config import MODEL_ID, MANTLE_API_KEY, MANTLE_BASE_URL
+from src.config import create_mantle_model
 
 _PROMPT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
 
@@ -26,19 +25,4 @@ def _load_prompt() -> str:
 
 
 def create_intake_agent() -> Agent:
-    """Create and return a configured Intake Agent."""
-    model = OpenAIModel(
-        client_args={
-            "base_url": MANTLE_BASE_URL,
-            "api_key": MANTLE_API_KEY,
-            "default_headers": {"openai-project": "default"},
-        },
-        model_id=MODEL_ID,
-        params={"temperature": 0.3},
-    )
-
-    return Agent(
-        model=model,
-        system_prompt=_load_prompt(),
-        tools=[],
-    )
+    return Agent(model=create_mantle_model(0.3), system_prompt=_load_prompt(), tools=[])

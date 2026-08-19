@@ -14,9 +14,8 @@ It does NOT do math — PolicyEngine handles all calculations.
 import os
 
 from strands import Agent
-from strands.models.openai import OpenAIModel
 
-from src.config import MODEL_ID, MANTLE_API_KEY, MANTLE_BASE_URL
+from src.config import create_mantle_model
 from src.tools.eligibility_checker import eligibility_checker
 from src.tools.application_finder import application_finder
 
@@ -29,19 +28,4 @@ def _load_prompt() -> str:
 
 
 def create_eligibility_agent() -> Agent:
-    """Create and return a configured Eligibility Agent."""
-    model = OpenAIModel(
-        client_args={
-            "base_url": MANTLE_BASE_URL,
-            "api_key": MANTLE_API_KEY,
-            "default_headers": {"openai-project": "default"},
-        },
-        model_id=MODEL_ID,
-        params={"temperature": 0.1},
-    )
-
-    return Agent(
-        model=model,
-        system_prompt=_load_prompt(),
-        tools=[eligibility_checker, application_finder],
-    )
+    return Agent(model=create_mantle_model(0.1), system_prompt=_load_prompt(), tools=[eligibility_checker, application_finder])

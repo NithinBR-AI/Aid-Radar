@@ -6,9 +6,6 @@ Run with: streamlit run src/app.py
 import json
 import os
 import re
-import sys
-
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import streamlit as st
 
@@ -19,6 +16,8 @@ from src.agents import (
     create_monitor_agent,
 )
 from src.main import _extract_json_profile, _build_eligibility_profile
+from src.tools.eligibility_checker import eligibility_checker
+from src.tools.profile_store import save_profile, get_profile, update_snapshot
 
 
 # ---------------------------------------------------------------------------
@@ -315,6 +314,12 @@ if "report" not in st.session_state:
     st.session_state.report = None
 if "monitor_notifications" not in st.session_state:
     st.session_state.monitor_notifications = None
+if "whatif_results" not in st.session_state:
+    st.session_state.whatif_results = None
+if "baseline_programs" not in st.session_state:
+    st.session_state.baseline_programs = {}
+if "profile_id" not in st.session_state:
+    st.session_state.profile_id = None
 
 
 # ---------------------------------------------------------------------------
@@ -490,6 +495,21 @@ def show_processing():
         result = agent(prompt)
         eligibility_text = str(result)
         st.session_state.eligibility_results = eligibility_text
+
+        # Store raw tool output for What If baseline + DynamoDB
+        try:
+            raw = eligibility_checker(json.dumps(eligibility_profile))
+            if raw.get("status") == "success":
+                programs = raw["content"][0]["json"]["programs"]
+                st.session_state.baseline_programs = programs
+                # Persist to DynamoDB for Monitor Agent
+                try:
+                    st.session_state.profile_id = save_profile(profile, programs)
+                except Exception:
+                    st.session_state.profile_id = None
+        except Exception:
+            st.session_state.baseline_programs = {}
+
         status.write("Eligibility check complete.")
 
         # Step 2: Recommendation Agent
@@ -521,10 +541,162 @@ def show_processing():
             st.rerun()
         if st.button("Start Over"):
             for key in ["stage", "messages", "intake_agent", "profile",
-                        "eligibility_results", "report", "monitor_notifications"]:
+                        "eligibility_results", "report", "monitor_notifications", "whatif_results",
+                        "baseline_programs", "profile_id"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# What If simulator helpers
+# ---------------------------------------------------------------------------
+def _run_whatif(modified_profile: dict) -> dict:
+    """Run eligibility_checker directly on a modified profile. No LLM involved."""
+    import json as _json
+    result = eligibility_checker(_json.dumps(modified_profile))
+    if result.get("status") != "success":
+        return {}
+    return result["content"][0]["json"]["programs"]
+
+
+def _build_whatif_profile(base_profile: dict, monthly_income: int, num_adults: int, num_children: int) -> dict:
+    """Build a modified profile copy without mutating the original."""
+    import copy
+    p = copy.deepcopy(base_profile)
+    p["monthly_income"] = monthly_income
+
+    annual = monthly_income * 12
+    existing_adults = p.get("adults", [])
+    new_adults = []
+    for i in range(num_adults):
+        age = existing_adults[i]["age"] if i < len(existing_adults) else 35
+        new_adults.append({"age": age, "income": annual if i == 0 else 0})
+    p["adults"] = new_adults
+
+    existing_children = p.get("children", [])
+    new_children = []
+    for i in range(num_children):
+        age = existing_children[i]["age"] if i < len(existing_children) else 5
+        new_children.append({"age": age})
+    p["children"] = new_children
+
+    return p
+
+
+def _show_whatif_section(base_profile: dict, original_programs: dict):
+    st.markdown("---")
+    st.markdown("### What If Simulator")
+    st.markdown(
+        "Adjust your household details below and see how your eligibility changes — instantly, "
+        "using the same real benefit calculation engine."
+    )
+
+    orig_income = base_profile.get("monthly_income", 0)
+    orig_adults = len(base_profile.get("adults", [{"age": 30}]))
+    orig_children = len(base_profile.get("children", []))
+
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        wi_income = st.slider(
+            "Monthly Income ($)",
+            min_value=0,
+            max_value=10000,
+            value=int(orig_income),
+            step=100,
+            key="wi_income",
+        )
+    with col2:
+        wi_adults = st.slider("Number of Adults", 1, 4, orig_adults, key="wi_adults")
+    with col3:
+        wi_children = st.slider("Number of Children", 0, 6, orig_children, key="wi_children")
+
+    changed = (wi_income != int(orig_income)) or (wi_adults != orig_adults) or (wi_children != orig_children)
+
+    if changed:
+        if st.button("Recalculate Eligibility", type="primary", use_container_width=True, key="wi_calc"):
+            with st.spinner("Running eligibility check..."):
+                modified = _build_whatif_profile(base_profile, wi_income, wi_adults, wi_children)
+                st.session_state.whatif_results = _run_whatif(modified)
+            st.rerun()
+    else:
+        st.caption("Adjust the sliders above to explore different scenarios.")
+
+    if st.session_state.whatif_results:
+        _render_whatif_comparison(original_programs, st.session_state.whatif_results)
+
+
+def _render_whatif_comparison(original: dict, modified: dict):
+    all_ids = set(original.keys()) | set(modified.keys())
+
+    gained, lost, changed_amount, unchanged = [], [], [], []
+    for pid in all_ids:
+        orig = original.get(pid, {})
+        mod = modified.get(pid, {})
+        orig_elig = orig.get("eligible", False)
+        mod_elig = mod.get("eligible", False)
+        name = mod.get("display_name") or orig.get("display_name") or pid.upper()
+
+        if not orig_elig and mod_elig:
+            gained.append((name, mod))
+        elif orig_elig and not mod_elig:
+            lost.append((name, mod))
+        elif orig_elig and mod_elig:
+            orig_amt = (orig.get("estimated_benefit") or {}).get("monthly", 0) or 0
+            mod_amt = (mod.get("estimated_benefit") or {}).get("monthly", 0) or 0
+            if abs(orig_amt - mod_amt) > 1:
+                changed_amount.append((name, orig_amt, mod_amt))
+            else:
+                unchanged.append(name)
+
+    st.markdown("#### Impact")
+
+    if not gained and not lost and not changed_amount:
+        st.info("No eligibility changes with these settings.")
+        return
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if gained:
+            for name, prog in gained:
+                amt = (prog.get("estimated_benefit") or {}).get("monthly")
+                amt_str = f" — ${amt:,.0f}/mo" if amt else ""
+                st.markdown(f"""
+                <div class="benefit-card" style="border-left:4px solid #2D7A4F;">
+                    <span class="eligible-badge">NOW ELIGIBLE</span>
+                    <h4>{name}{amt_str}</h4>
+                </div>
+                """, unsafe_allow_html=True)
+        if changed_amount:
+            for name, orig_amt, mod_amt in changed_amount:
+                delta = mod_amt - orig_amt
+                sign = "+" if delta > 0 else ""
+                color = "#2D7A4F" if delta > 0 else "#C0392B"
+                st.markdown(f"""
+                <div class="benefit-card" style="border-left:4px solid {color};">
+                    <span class="eligible-badge">AMOUNT CHANGED</span>
+                    <h4>{name}</h4>
+                    <div style="color:{color};font-weight:700;">{sign}${delta:,.0f}/mo</div>
+                    <div style="color:#666;font-size:0.82rem;">${orig_amt:,.0f} → ${mod_amt:,.0f}/mo</div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    with col2:
+        if lost:
+            for name, _ in lost:
+                st.markdown(f"""
+                <div class="benefit-card" style="border-left:4px solid #C0392B;">
+                    <span class="ineligible-badge">NO LONGER ELIGIBLE</span>
+                    <h4>{name}</h4>
+                </div>
+                """, unsafe_allow_html=True)
+        if unchanged:
+            st.markdown(
+                f"<div style='color:#888;font-size:0.82rem;margin-top:0.5rem;'>"
+                f"Unchanged: {', '.join(unchanged)}</div>",
+                unsafe_allow_html=True
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -584,7 +756,7 @@ def show_results():
         cols = st.columns(2)
         for i, prog in enumerate(eligible):
             with cols[i % 2]:
-                name = prog.get("program_name", prog.get("program_id", ""))
+                name = prog.get("display_name") or prog.get("program_name") or prog.get("program_id", "").replace("_", " ").upper()
                 monthly = prog.get("estimated_monthly_benefit")
                 url = prog.get("apply_url", "")
                 cascading = prog.get("cascading_benefits", [])
@@ -612,7 +784,7 @@ def show_results():
         if ineligible:
             st.markdown("### Not Eligible")
             for prog in ineligible:
-                name = prog.get("program_name", prog.get("program_id", ""))
+                name = prog.get("display_name") or prog.get("program_name") or prog.get("program_id", "").replace("_", " ").upper()
                 reason = prog.get("reason", "")
                 st.markdown(f"""
                 <div class="benefit-card">
@@ -632,6 +804,11 @@ def show_results():
             </div>
             """, unsafe_allow_html=True)
 
+    # What If simulator
+    if st.session_state.profile:
+        original_programs = st.session_state.get("baseline_programs") or {}
+        _show_whatif_section(st.session_state.profile, original_programs)
+
     # Full report
     st.markdown("---")
     with st.expander("Full Benefits Report", expanded=False):
@@ -641,23 +818,31 @@ def show_results():
     st.markdown("---")
     st.markdown("### Monitor Agent")
     st.markdown(
-        "AidRadar doesn't stop here. The Monitor Agent runs automatically on a schedule "
-        "(AWS EventBridge) and re-checks your eligibility when **program thresholds change** "
-        "— so you never miss a benefit you've become eligible for."
+        "AidRadar doesn't stop here. The Monitor Agent runs on a schedule via AWS EventBridge — "
+        "weekly or monthly — loads your saved profile from DynamoDB, re-runs the real PolicyEngine "
+        "eligibility calculation, and sends you a notification **only when something actually changes**. "
+        "No login needed. No forms to re-fill. You get an email or SMS the moment you become eligible "
+        "for a new program, or when a benefit amount changes."
     )
+
+    orig_income = st.session_state.profile.get("monthly_income", 2000) if st.session_state.profile else 2000
     st.caption(
-        "Click below to simulate the 2027 Federal Poverty Level update. "
-        "Your profile stays the same — only the government's rules change."
+        f"Simulate a life event: your income dropped. "
+        f"Your current income is **${orig_income:,}/month**. "
+        "Adjust the slider and run the Monitor Agent to see real eligibility changes."
     )
 
-    run_monitor = st.button(
-        "Simulate: 2027 FPL Guidelines Update (+4.2%)",
-        type="primary",
-        use_container_width=True,
+    monitor_income = st.slider(
+        "Simulated new monthly income ($)",
+        min_value=0,
+        max_value=int(orig_income),
+        value=max(0, int(orig_income) - 1000),
+        step=100,
+        key="monitor_income_slider",
     )
 
-    if run_monitor:
-        _run_monitor_demo()
+    if st.button("Run Monitor Agent", type="primary", use_container_width=True, key="run_monitor"):
+        _run_monitor_demo(monitor_income)
 
     if st.session_state.monitor_notifications is not None:
         _render_monitor_notifications()
@@ -668,7 +853,8 @@ def show_results():
     with col1:
         if st.button("Start Over", use_container_width=True):
             for key in ["stage", "messages", "intake_agent", "profile",
-                        "eligibility_results", "report", "monitor_notifications"]:
+                        "eligibility_results", "report", "monitor_notifications", "whatif_results",
+                        "baseline_programs", "profile_id"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
@@ -678,70 +864,188 @@ def show_results():
 
 
 # ---------------------------------------------------------------------------
-# Monitor Agent demo
+# Monitor Agent demo — real DynamoDB-backed before/after
 # ---------------------------------------------------------------------------
-def _run_monitor_demo():
-    """Simulate a 2027 FPL threshold increase and run the Monitor Agent."""
-    profile = st.session_state.profile
-    fpl_increase_pct = 4.2
+def _run_monitor_demo(new_monthly_income: int):
+    """
+    Real Monitor Agent demo:
+    1. Load saved profile + snapshot from DynamoDB
+    2. Build modified profile with new income
+    3. Re-run eligibility_checker (PolicyEngine) — real calculation
+    4. Diff new vs stored snapshot — real changes
+    5. Run Monitor Agent with both snapshots to generate notifications
+    """
+    import copy
+
+    profile_id = st.session_state.profile_id
+    original_profile = st.session_state.profile  # intake format
 
     status = st.status("Monitor Agent running scheduled check...", expanded=True)
-    status.write("**January 2027** — New Federal Poverty Level guidelines published.")
-    status.write(f"FPL increased by **{fpl_increase_pct}%** across all household sizes.")
-    status.write("Re-checking eligibility with the same household profile against new thresholds...")
 
+    # Load from DynamoDB
+    status.write("Loading saved profile from DynamoDB...")
+    saved = get_profile(profile_id) if profile_id else None
+    if not saved:
+        saved = {
+            "profile": original_profile,
+            "eligibility_snapshot": st.session_state.baseline_programs,
+        }
+        status.write("(Using in-session baseline — DynamoDB profile not found)")
+
+    previous_snapshot = saved["eligibility_snapshot"]
+
+    # Build modified eligibility profile (correct format for PolicyEngine)
+    base_eligibility = _build_eligibility_profile(original_profile)
+    modified_profile = copy.deepcopy(base_eligibility)
+    modified_profile["monthly_income"] = new_monthly_income
+    if modified_profile.get("adults"):
+        modified_profile["adults"][0]["income"] = new_monthly_income * 12
+
+    orig_monthly = base_eligibility.get("monthly_income", original_profile.get("monthly_income", 0))
+    status.write(f"Income changed: **${orig_monthly:,}/mo → ${new_monthly_income:,}/mo**")
+    status.write("Re-running PolicyEngine eligibility check with new income...")
+
+    # Real eligibility re-check
+    raw = eligibility_checker(json.dumps(modified_profile))
+    if raw.get("status") != "success":
+        status.update(label="Eligibility check failed", state="error")
+        return
+
+    new_snapshot = raw["content"][0]["json"]["programs"]
+
+    # Update DynamoDB with new snapshot
+    if profile_id:
+        update_snapshot(profile_id, new_snapshot)
+
+    status.write("Comparing against stored eligibility snapshot...")
+
+    # Run Monitor Agent with BOTH real snapshots
     agent = create_monitor_agent()
+    # Build a compact diff summary so the LLM focuses on narrative, not recalculation
+    diff_gained = []
+    diff_lost = []
+    diff_changed = []
+    for pid in set(previous_snapshot) | set(new_snapshot):
+        prev = previous_snapshot.get(pid, {})
+        curr = new_snapshot.get(pid, {})
+        name = curr.get("display_name") or prev.get("display_name") or pid.upper()
+        prev_elig = prev.get("eligible", False)
+        curr_elig = curr.get("eligible", False)
+        if not prev_elig and curr_elig:
+            diff_gained.append(name)
+        elif prev_elig and not curr_elig:
+            diff_lost.append(name)
+        else:
+            prev_amt = (prev.get("estimated_benefit") or {}).get("monthly", 0) or 0
+            curr_amt = (curr.get("estimated_benefit") or {}).get("monthly", 0) or 0
+            if abs(curr_amt - prev_amt) > 5:
+                diff_changed.append(f"{name}: ${prev_amt:,.0f}/mo → ${curr_amt:,.0f}/mo")
+
     prompt = (
-        "You are running a scheduled eligibility re-check. The user's profile has NOT changed. "
-        "What changed is the **Federal Poverty Level guidelines for 2027**, which increased by 4.2%.\n\n"
-        "This means income thresholds for programs like SNAP, TANF, LIHEAP, and Free School Meals "
-        "have all risen — some households that were previously just above the cutoff may now qualify.\n\n"
-        f"**User profile (unchanged):**\n```json\n{json.dumps(profile, indent=2)}\n```\n\n"
-        f"**Previous eligibility results (2026 thresholds):**\n{st.session_state.eligibility_results}\n\n"
-        "Call eligibility_checker with the user's profile to get the CURRENT results. "
-        "Then compare against the previous results above.\n\n"
-        "For this simulation, assume the 4.2% FPL increase means:\n"
-        "- Programs where the user was close to the income threshold (within 10%) may now show as eligible\n"
-        "- Benefit amounts for already-eligible programs may have increased slightly\n"
-        "- Programs where the user was well below the threshold are unchanged\n\n"
-        "Report ONLY meaningful changes as notifications. Use proper program display names "
-        "(SNAP, Medicaid, SSI, TANF, WIC, LIHEAP, Lifeline, Free School Meals). "
-        "For each change, explain that the 2027 FPL increase caused the threshold to rise. "
-        "Output a JSON array of notifications following your notification format."
+        "You are the AidRadar Monitor Agent running a scheduled eligibility re-check.\n\n"
+        f"**Life event:** The user's income dropped from "
+        f"${orig_monthly:,}/month to ${new_monthly_income:,}/month.\n\n"
+        "**Eligibility changes (already calculated by PolicyEngine — do NOT recalculate):**\n"
+        f"- Newly eligible: {', '.join(diff_gained) if diff_gained else 'none'}\n"
+        f"- Lost eligibility: {', '.join(diff_lost) if diff_lost else 'none'}\n"
+        f"- Benefit amounts changed: {', '.join(diff_changed) if diff_changed else 'none'}\n\n"
+        "Write a short, human-friendly notification summary (3-5 sentences) explaining what changed "
+        "and what the user should do next. Use plain language, no JSON, no technical jargon. "
+        "Focus on actionable next steps for each changed program."
     )
 
     result = agent(prompt)
     agent_text = str(result)
 
-    status.update(label="Monitor Agent: scheduled check complete", state="complete", expanded=False)
+    # Use diff already computed above for the prompt
+    gained = diff_gained
+    lost = diff_lost
+    # Reparse diff_changed into (name, prev_amt, curr_amt) tuples for rendering
+    changed = []
+    for pid in set(previous_snapshot) | set(new_snapshot):
+        prev = previous_snapshot.get(pid, {})
+        curr = new_snapshot.get(pid, {})
+        prev_elig = prev.get("eligible", False)
+        curr_elig = curr.get("eligible", False)
+        if prev_elig and curr_elig:
+            prev_amt = (prev.get("estimated_benefit") or {}).get("monthly", 0) or 0
+            curr_amt = (curr.get("estimated_benefit") or {}).get("monthly", 0) or 0
+            if abs(curr_amt - prev_amt) > 5:
+                name = curr.get("display_name") or prev.get("display_name") or pid.upper()
+                changed.append((name, prev_amt, curr_amt))
+
+    status.update(label="Monitor Agent: check complete", state="complete", expanded=False)
 
     st.session_state.monitor_notifications = {
-        "scenario": "2027 Federal Poverty Level guidelines increased by 4.2%",
-        "fpl_increase": fpl_increase_pct,
+        "original_income": orig_monthly,
+        "new_income": new_monthly_income,
+        "gained": gained,
+        "lost": lost,
+        "changed": changed,
         "agent_output": agent_text,
+        "profile_id": profile_id,
     }
     st.rerun()
 
 
 def _render_monitor_notifications():
-    """Render the Monitor Agent's notifications."""
     data = st.session_state.monitor_notifications
-    scenario = data["scenario"]
+    orig = data["original_income"]
+    new = data["new_income"]
+    gained = data["gained"]
+    lost = data["lost"]
+    changed = data["changed"]
+    profile_id = data.get("profile_id")
+
+    pid_str = f" · Profile `{profile_id[:8]}...`" if profile_id else ""
 
     st.markdown(f"""
     <div class="notif-card" style="border-left-color:#1565C0;background:#E3F2FD;">
         <div style="font-weight:700;color:#0D47A1;margin-bottom:0.3rem;">
-            Scheduled Check — January 2027
+            Scheduled Check — Monitor Agent
         </div>
-        <div style="color:#1A1A18;">{scenario}</div>
+        <div style="color:#1A1A18;">Income changed: <strong>${orig:,}/mo → ${new:,}/mo</strong></div>
         <div style="color:#555;font-size:0.85rem;margin-top:0.3rem;">
-            Your profile was unchanged. The Monitor Agent detected the threshold update
-            and re-evaluated your eligibility automatically.
+            Profile loaded from DynamoDB. Eligibility re-calculated by PolicyEngine.
+            Diff computed against stored snapshot.
         </div>
     </div>
     """, unsafe_allow_html=True)
 
-    with st.expander("Monitor Agent Analysis", expanded=True):
+    col1, col2 = st.columns(2)
+    with col1:
+        for name in gained:
+            st.markdown(f"""
+            <div class="notif-card">
+                <div class="notif-tier low">NEW — Tier 1</div>
+                <h4>{name}</h4>
+                <p>You are now eligible. Apply as soon as possible.</p>
+            </div>
+            """, unsafe_allow_html=True)
+        for name, prev_amt, curr_amt in changed:
+            delta = curr_amt - prev_amt
+            sign = "+" if delta > 0 else ""
+            st.markdown(f"""
+            <div class="notif-card medium">
+                <div class="notif-tier medium">CHANGED — Tier 3</div>
+                <h4>{name}</h4>
+                <p>${prev_amt:,.0f}/mo → ${curr_amt:,.0f}/mo ({sign}${delta:,.0f})</p>
+            </div>
+            """, unsafe_allow_html=True)
+    with col2:
+        for name in lost:
+            st.markdown(f"""
+            <div class="notif-card high">
+                <div class="notif-tier high">LOST — Tier 2</div>
+                <h4>{name}</h4>
+                <p>You may no longer qualify. Update your profile if your situation changed.</p>
+            </div>
+            """, unsafe_allow_html=True)
+
+    if not gained and not lost and not changed:
+        st.info("No eligibility changes detected with this income level.")
+
+    with st.expander("Monitor Agent Full Analysis", expanded=False):
         st.markdown(data["agent_output"])
 
 

@@ -1,4 +1,5 @@
-# Master list of benefit programs AidRadar checks against.
+# Reference config — documents program list for ops/review.
+# Not imported at runtime: eligibility_checker.py defines PROGRAM_VARIABLES directly.
 # Eligibility for 7 programs is calculated by PolicyEngine (policyengine-us).
 # LIHEAP uses a simple FPL-based fallback since PolicyEngine doesn't model it.
 # Application URLs and documents are stored in src/data/programs/<id>.json.

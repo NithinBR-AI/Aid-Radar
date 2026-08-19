@@ -58,7 +58,9 @@ For each saved profile:
 
 ## Output format
 
-Output a JSON array of notifications. Empty array if no changes.
+When the prompt explicitly asks for a human-friendly narrative summary, write 3-5 plain English sentences — no JSON, no lists, no code blocks. Focus on what changed and what the user should do next.
+
+When the prompt asks for structured JSON output, use this format:
 
 ```json
 [
@@ -70,7 +72,7 @@ Output a JSON array of notifications. Empty array if no changes.
     "change_type": "newly_eligible",
     "previous_status": "ineligible",
     "new_status": "eligible",
-    "reason": "2027 FPL guidelines increased threshold from $33,000 to $34,200 for family of 4",
+    "reason": "Income dropped below SNAP threshold",
     "estimated_benefit": 536,
     "action_url": "https://benefitscal.com",
     "message": "You may now qualify for SNAP (Food Stamps)..."
