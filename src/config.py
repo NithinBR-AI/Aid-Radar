@@ -6,6 +6,15 @@ from strands.models.openai import OpenAIModel
 
 load_dotenv(override=True)
 
+# On Streamlit Cloud, secrets are available via streamlit.secrets — sync to os.environ
+try:
+    import streamlit as st
+    for _k, _v in st.secrets.items():
+        if isinstance(_v, str):
+            os.environ.setdefault(_k, _v)
+except Exception:
+    pass
+
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
 AWS_PROFILE = os.getenv("AWS_PROFILE", "default")
 MODEL_ID = os.getenv("MODEL_ID", "deepseek.v3.2")
