@@ -11,7 +11,7 @@ This agent has two tools: eligibility_checker and application_finder.
 It does NOT do math — PolicyEngine handles all calculations.
 """
 
-import os
+from pathlib import Path
 
 from strands import Agent
 
@@ -19,12 +19,11 @@ from src.config import create_mantle_model
 from src.tools.eligibility_checker import eligibility_checker
 from src.tools.application_finder import application_finder
 
-_PROMPT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
+_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "eligibility.txt"
 
 
 def _load_prompt() -> str:
-    with open(os.path.join(_PROMPT_DIR, "eligibility.txt"), "r", encoding="utf-8") as f:
-        return f.read()
+    return _PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def create_eligibility_agent() -> Agent:

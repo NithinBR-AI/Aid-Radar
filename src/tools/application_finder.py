@@ -21,19 +21,17 @@ Usage by agents:
 """
 
 import json
-import os
+from pathlib import Path
 from typing import Optional
 
 from strands import tool
 
-_DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
+_DATA_DIR = Path(__file__).parent.parent / "data"
 
 
 def _load_program(program_id: str) -> dict:
-    """Load a program's rule file from disk."""
-    path = os.path.join(_DATA_DIR, "programs", f"{program_id}.json")
-    with open(path, "r", encoding="utf-8") as f:
-        return json.load(f)
+    path = _DATA_DIR / "programs" / f"{program_id}.json"
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 @tool(

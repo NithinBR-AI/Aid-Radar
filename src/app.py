@@ -4,20 +4,13 @@ Run with: streamlit run src/app.py
 """
 
 import json
-import os
 import re
 
 import streamlit as st
 
-from src.agents import (
-    create_intake_agent,
-    create_eligibility_agent,
-    create_recommendation_agent,
-    create_monitor_agent,
-)
-from src.main import _extract_json_profile, _build_eligibility_profile
-from src.tools.eligibility_checker import eligibility_checker
-from src.tools.profile_store import save_profile, get_profile, update_snapshot
+from src.agents import create_intake_agent
+from src.pipeline.runner import extract_json_profile, build_eligibility_profile, run_pipeline, run_whatif
+from src.pipeline.monitor_pipeline import run_monitor_check
 
 
 # ---------------------------------------------------------------------------
@@ -450,17 +443,13 @@ def show_intake():
 
         st.session_state.messages.append({"role": "assistant", "content": agent_text})
 
-        profile = _extract_json_profile(agent_text)
+        profile = extract_json_profile(agent_text)
         if profile and "state" in profile and "monthly_income" in profile:
             st.session_state.profile = profile
             st.session_state.stage = "processing"
             st.rerun()
         elif profile and ("state" not in profile or "monthly_income" not in profile):
-            missing = []
-            if "state" not in profile:
-                missing.append("state")
-            if "monthly_income" not in profile:
-                missing.append("monthly_income")
+            missing = [f for f in ("state", "monthly_income") if f not in profile]
             with st.chat_message("assistant"):
                 st.warning(f"Profile captured but missing required fields: {', '.join(missing)}. Continuing interview...")
             st.rerun()
@@ -473,60 +462,24 @@ def show_intake():
 # ---------------------------------------------------------------------------
 def show_processing():
     render_pipeline("eligibility")
-
     st.markdown("#### Analyzing your eligibility...")
 
-    profile = st.session_state.profile
-    eligibility_profile = _build_eligibility_profile(profile)
-
     status = st.status("Running AidRadar pipeline...", expanded=True)
-
     try:
-        # Step 1: Eligibility Agent
         status.write("**Step 1/2** — Eligibility Agent checking 8 programs via PolicyEngine...")
-        agent = create_eligibility_agent()
-        prompt = (
-            "Here is the household profile from the Intake Agent. "
-            "Call the eligibility_checker tool with this profile, then call "
-            "application_finder for each eligible program. "
-            "Output the structured eligibility results.\n\n"
-            f"```json\n{json.dumps(eligibility_profile, indent=2)}\n```"
-        )
-        result = agent(prompt)
-        eligibility_text = str(result)
-        st.session_state.eligibility_results = eligibility_text
-
-        # Store raw tool output for What If baseline + DynamoDB
-        try:
-            raw = eligibility_checker(json.dumps(eligibility_profile))
-            if raw.get("status") == "success":
-                programs = raw["content"][0]["json"]["programs"]
-                st.session_state.baseline_programs = programs
-                # Persist to DynamoDB for Monitor Agent
-                try:
-                    st.session_state.profile_id = save_profile(profile, programs)
-                except Exception:
-                    st.session_state.profile_id = None
-        except Exception:
-            st.session_state.baseline_programs = {}
-
-        status.write("Eligibility check complete.")
-
-        # Step 2: Recommendation Agent
         status.write("**Step 2/2** — Recommendation Agent generating your benefits report...")
-        rec_agent = create_recommendation_agent()
-        rec_prompt = (
-            "Here is the household profile and eligibility results. "
-            "Generate the full benefits report following your instructions.\n\n"
-            f"**Household Profile:**\n```json\n{json.dumps(profile, indent=2)}\n```\n\n"
-            f"**Eligibility Results:**\n{eligibility_text}"
-        )
-        result = rec_agent(rec_prompt)
-        report_text = str(result)
-        st.session_state.report = report_text
+
+        result = run_pipeline(st.session_state.profile)
+
+        if not result.success:
+            raise RuntimeError(result.error)
+
+        st.session_state.eligibility_results = result.eligibility_text
+        st.session_state.report = result.report_text
+        st.session_state.baseline_programs = result.programs
+        st.session_state.profile_id = result.profile_id
 
         status.update(label="Pipeline complete!", state="complete", expanded=False)
-
         st.session_state.stage = "results"
         st.rerun()
 
@@ -540,9 +493,8 @@ def show_processing():
         if st.button("Retry", type="primary"):
             st.rerun()
         if st.button("Start Over"):
-            for key in ["stage", "messages", "intake_agent", "profile",
-                        "eligibility_results", "report", "monitor_notifications", "whatif_results",
-                        "baseline_programs", "profile_id"]:
+            for key in ["stage", "messages", "intake_agent", "profile", "eligibility_results",
+                        "report", "monitor_notifications", "whatif_results", "baseline_programs", "profile_id"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
@@ -551,39 +503,6 @@ def show_processing():
 # ---------------------------------------------------------------------------
 # What If simulator helpers
 # ---------------------------------------------------------------------------
-def _run_whatif(modified_profile: dict) -> dict:
-    """Run eligibility_checker directly on a modified profile. No LLM involved."""
-    import json as _json
-    result = eligibility_checker(_json.dumps(modified_profile))
-    if result.get("status") != "success":
-        return {}
-    return result["content"][0]["json"]["programs"]
-
-
-def _build_whatif_profile(base_profile: dict, monthly_income: int, num_adults: int, num_children: int) -> dict:
-    """Build a modified profile copy without mutating the original."""
-    import copy
-    p = copy.deepcopy(base_profile)
-    p["monthly_income"] = monthly_income
-
-    annual = monthly_income * 12
-    existing_adults = p.get("adults", [])
-    new_adults = []
-    for i in range(num_adults):
-        age = existing_adults[i]["age"] if i < len(existing_adults) else 35
-        new_adults.append({"age": age, "income": annual if i == 0 else 0})
-    p["adults"] = new_adults
-
-    existing_children = p.get("children", [])
-    new_children = []
-    for i in range(num_children):
-        age = existing_children[i]["age"] if i < len(existing_children) else 5
-        new_children.append({"age": age})
-    p["children"] = new_children
-
-    return p
-
-
 def _show_whatif_section(base_profile: dict, original_programs: dict):
     st.markdown("---")
     st.markdown("### What If Simulator")
@@ -616,8 +535,7 @@ def _show_whatif_section(base_profile: dict, original_programs: dict):
     if changed:
         if st.button("Recalculate Eligibility", type="primary", use_container_width=True, key="wi_calc"):
             with st.spinner("Running eligibility check..."):
-                modified = _build_whatif_profile(base_profile, wi_income, wi_adults, wi_children)
-                st.session_state.whatif_results = _run_whatif(modified)
+                st.session_state.whatif_results = run_whatif(base_profile, wi_income, wi_adults, wi_children)
             st.rerun()
     else:
         st.caption("Adjust the sliders above to explore different scenarios.")
@@ -831,8 +749,7 @@ def show_results():
     )
 
     if st.button("Run Monitor Agent", type="primary", use_container_width=True, key="run_monitor"):
-        orig_income = st.session_state.profile.get("monthly_income", 2000) if st.session_state.profile else 2000
-        _run_monitor_demo(int(orig_income))
+        _run_monitor_demo()
 
     if st.session_state.monitor_notifications is not None:
         _render_monitor_notifications()
@@ -854,126 +771,35 @@ def show_results():
 
 
 # ---------------------------------------------------------------------------
-# Monitor Agent demo — real DynamoDB-backed before/after
+# Monitor Agent demo
 # ---------------------------------------------------------------------------
-def _run_monitor_demo(new_monthly_income: int):
-    """
-    Real Monitor Agent demo:
-    1. Load saved profile + snapshot from DynamoDB
-    2. Build modified profile with new income
-    3. Re-run eligibility_checker (PolicyEngine) — real calculation
-    4. Diff new vs stored snapshot — real changes
-    5. Run Monitor Agent with both snapshots to generate notifications
-    """
-    import copy
-
-    profile_id = st.session_state.profile_id
-    original_profile = st.session_state.profile  # intake format
-
+def _run_monitor_demo():
     status = st.status("Monitor Agent running scheduled check...", expanded=True)
-
-    # Load from DynamoDB
     status.write("Loading saved profile from DynamoDB...")
-    saved = get_profile(profile_id) if profile_id else None
-    if not saved:
-        saved = {
-            "profile": original_profile,
-            "eligibility_snapshot": st.session_state.baseline_programs,
-        }
-        status.write("(Using in-session baseline — DynamoDB profile not found)")
-
-    previous_snapshot = saved["eligibility_snapshot"]
-
-    # Build modified eligibility profile (correct format for PolicyEngine)
-    base_eligibility = _build_eligibility_profile(original_profile)
-    modified_profile = copy.deepcopy(base_eligibility)
-    modified_profile["monthly_income"] = new_monthly_income
-    if modified_profile.get("adults"):
-        modified_profile["adults"][0]["income"] = new_monthly_income * 12
-
-    orig_monthly = base_eligibility.get("monthly_income", original_profile.get("monthly_income", 0))
-    status.write(f"Income changed: **${orig_monthly:,}/mo → ${new_monthly_income:,}/mo**")
-    status.write("Re-running PolicyEngine eligibility check with new income...")
-
-    # Real eligibility re-check
-    raw = eligibility_checker(json.dumps(modified_profile))
-    if raw.get("status") != "success":
-        status.update(label="Eligibility check failed", state="error")
-        return
-
-    new_snapshot = raw["content"][0]["json"]["programs"]
-
-    # Update DynamoDB with new snapshot
-    if profile_id:
-        update_snapshot(profile_id, new_snapshot)
-
+    status.write("Re-running PolicyEngine eligibility check against current federal guidelines...")
     status.write("Comparing against stored eligibility snapshot...")
 
-    # Run Monitor Agent with BOTH real snapshots
-    agent = create_monitor_agent()
-    # Build a compact diff summary so the LLM focuses on narrative, not recalculation
-    diff_gained = []
-    diff_lost = []
-    diff_changed = []
-    for pid in set(previous_snapshot) | set(new_snapshot):
-        prev = previous_snapshot.get(pid, {})
-        curr = new_snapshot.get(pid, {})
-        name = curr.get("display_name") or prev.get("display_name") or pid.upper()
-        prev_elig = prev.get("eligible", False)
-        curr_elig = curr.get("eligible", False)
-        if not prev_elig and curr_elig:
-            diff_gained.append(name)
-        elif prev_elig and not curr_elig:
-            diff_lost.append(name)
-        else:
-            prev_amt = (prev.get("estimated_benefit") or {}).get("monthly", 0) or 0
-            curr_amt = (curr.get("estimated_benefit") or {}).get("monthly", 0) or 0
-            if abs(curr_amt - prev_amt) > 5:
-                diff_changed.append(f"{name}: ${prev_amt:,.0f}/mo → ${curr_amt:,.0f}/mo")
-
-    prompt = (
-        "You are the AidRadar Monitor Agent running a scheduled eligibility re-check.\n\n"
-        f"**Life event:** The user's income dropped from "
-        f"${orig_monthly:,}/month to ${new_monthly_income:,}/month.\n\n"
-        "**Eligibility changes (already calculated by PolicyEngine — do NOT recalculate):**\n"
-        f"- Newly eligible: {', '.join(diff_gained) if diff_gained else 'none'}\n"
-        f"- Lost eligibility: {', '.join(diff_lost) if diff_lost else 'none'}\n"
-        f"- Benefit amounts changed: {', '.join(diff_changed) if diff_changed else 'none'}\n\n"
-        "Write a short, human-friendly notification summary (3-5 sentences) explaining what changed "
-        "and what the user should do next. Use plain language, no JSON, no technical jargon. "
-        "Focus on actionable next steps for each changed program."
+    result = run_monitor_check(
+        profile_id=st.session_state.profile_id,
+        intake_profile=st.session_state.profile,
+        baseline_programs=st.session_state.get("baseline_programs", {}),
     )
 
-    result = agent(prompt)
-    agent_text = str(result)
-
-    # Use diff already computed above for the prompt
-    gained = diff_gained
-    lost = diff_lost
-    # Reparse diff_changed into (name, prev_amt, curr_amt) tuples for rendering
-    changed = []
-    for pid in set(previous_snapshot) | set(new_snapshot):
-        prev = previous_snapshot.get(pid, {})
-        curr = new_snapshot.get(pid, {})
-        prev_elig = prev.get("eligible", False)
-        curr_elig = curr.get("eligible", False)
-        if prev_elig and curr_elig:
-            prev_amt = (prev.get("estimated_benefit") or {}).get("monthly", 0) or 0
-            curr_amt = (curr.get("estimated_benefit") or {}).get("monthly", 0) or 0
-            if abs(curr_amt - prev_amt) > 5:
-                name = curr.get("display_name") or prev.get("display_name") or pid.upper()
-                changed.append((name, prev_amt, curr_amt))
+    if result.error:
+        status.update(label="Monitor check failed", state="error")
+        st.error(result.error)
+        return
 
     status.update(label="Monitor Agent: check complete", state="complete", expanded=False)
 
     st.session_state.monitor_notifications = {
-        "original_income": orig_monthly,
-        "new_income": new_monthly_income,
-        "gained": gained,
-        "lost": lost,
-        "changed": changed,
-        "agent_output": agent_text,
-        "profile_id": profile_id,
+        "original_income": result.original_income,
+        "new_income": result.new_income,
+        "gained": result.gained,
+        "lost": result.lost,
+        "changed": result.changed,
+        "agent_output": result.agent_output,
+        "profile_id": result.profile_id,
     }
     st.rerun()
 

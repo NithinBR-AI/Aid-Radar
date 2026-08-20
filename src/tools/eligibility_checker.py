@@ -16,6 +16,7 @@ Usage by agents:
 from policyengine_us import Simulation
 
 from strands import tool
+from src.guardrails.profile_validator import validate_profile, ProfileValidationError
 
 PROGRAM_VARIABLES = {
     "snap": {
@@ -180,6 +181,12 @@ def eligibility_checker(profile_json: str) -> dict:
             profile = profile_json
         else:
             return {"status": "error", "content": [{"text": f"Invalid profile JSON: {e}"}]}
+
+    try:
+        profile = validate_profile(profile)
+    except ProfileValidationError as e:
+        return {"status": "error", "content": [{"text": f"Invalid profile: {e}"}]}
+
     try:
         situation = _build_situation(profile)
         sim = Simulation(situation=situation)

@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from src.agents import create_monitor_agent
 from src.config import get_boto_session
 from src.tools.eligibility_checker import eligibility_checker
-from src.tools.profile_store import update_snapshot
+from src.db.profile_store import update_snapshot
 
 _TABLE_NAME = "aid-radar-profiles"
 

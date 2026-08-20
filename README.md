@@ -50,34 +50,36 @@ California, Texas, New York, Florida (covering ~100M people)
 
 ```
 aid-radar/
+├── main.py                         # CLI entry point
+├── monitor_runner.py               # Monitor Agent cron runner (EventBridge target)
 ├── src/
-│   ├── app.py                      # Streamlit web app (hero, chat intake, results dashboard, monitor demo)
-│   ├── main.py                     # CLI entry point (3-agent pipeline)
-│   ├── config.py                   # Environment config (Mantle endpoint + API key)
-│   ├── monitor_runner.py           # Monitor Agent standalone runner
+│   ├── app.py                      # Streamlit UI — hero, chat, results dashboard (UI only)
+│   ├── main.py                     # CLI pipeline logic
+│   ├── config.py                   # Mantle endpoint, Boto3 session factory
 │   ├── agents/
 │   │   ├── intake.py               # Intake Agent (conversational, no tools)
 │   │   ├── eligibility.py          # Eligibility Agent (eligibility_checker + application_finder)
 │   │   ├── recommendation.py       # Recommendation Agent (report generation, no tools)
-│   │   └── monitor.py              # Monitor Agent (background re-checker)
+│   │   └── monitor.py              # Monitor Agent (narrative only, no tools)
+│   ├── pipeline/
+│   │   ├── runner.py               # run_pipeline(), run_whatif(), profile conversion helpers
+│   │   └── monitor_pipeline.py     # run_monitor_check(), snapshot diff logic
 │   ├── tools/
 │   │   ├── eligibility_checker.py  # PolicyEngine-backed eligibility for all 8 programs
-│   │   ├── application_finder.py   # State-specific application URLs and documents
-│   │   └── profile_store.py        # DynamoDB persistence (save/load/update profiles)
-│   ├── prompts/                    # Agent system prompts
-│   │   ├── intake.txt
-│   │   ├── eligibility.txt
-│   │   ├── recommendation.txt
-│   │   └── monitor.txt
+│   │   └── application_finder.py   # State-specific application URLs and documents
+│   ├── db/
+│   │   └── profile_store.py        # DynamoDB — save/load/update profiles + snapshots
+│   ├── guardrails/
+│   │   └── profile_validator.py    # Input validation, state normalization, PII scrubbing
+│   ├── prompts/                    # Agent system prompts (txt files)
 │   ├── data/
-│   │   └── programs/              # Per-program JSON (URLs, documents, state overrides)
-│   └── config/                    # Reference YAML configs (programs, states, monitor schedule)
+│   │   └── programs/               # Per-program JSON (URLs, documents, state overrides)
+│   └── config/                     # Reference YAML configs (programs, states, monitor schedule)
 ├── evals/
-│   └── evals.py                   # 10-profile eval suite (tool accuracy + 3 agent quality evals)
-├── tests/
-│   └── test_policyengine.py       # PolicyEngine integration test
+│   └── evals.py                    # 10-profile eval suite (tool accuracy + 3 agent quality evals)
+├── pyproject.toml
 ├── requirements.txt
-└── .env                           # MANTLE_API_KEY, MODEL_ID, AWS_REGION
+└── .env                            # MANTLE_API_KEY, MODEL_ID, AWS_REGION
 ```
 
 ## Setup
@@ -155,7 +157,6 @@ AidRadar was built for the [Agents for Humans](https://agentsforhumans.devpost.c
 | 1 — MVP | DynamoDB | Zero ops, pay-per-request, fits hackathon scale |
 | 2 — Pilot | DynamoDB + PostgreSQL (RDS) | Postgres for user accounts, caseworker relationships, and application tracking; DynamoDB retained for ephemeral eligibility snapshots |
 | 3 — Scale | PostgreSQL (primary) + DynamoDB (cache) + Redshift/Athena (analytics) | Full relational model for transactional data, separate analytics layer for policy insights and aggregate reporting |
-- **Production frontend** — migrate from Streamlit to a proper React/Next.js web app with mobile-first design, accessible to users on low-end devices and slow connections (the population most likely to need these benefits)
 
 ## License
 

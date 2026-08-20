@@ -10,6 +10,7 @@ Run: python -m evals.evals
 
 import json
 import re
+import sys
 
 from src.tools.eligibility_checker import eligibility_checker
 from src.agents import (

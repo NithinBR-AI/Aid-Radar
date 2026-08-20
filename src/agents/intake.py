@@ -10,18 +10,17 @@ The pipeline runner manages the conversation loop: it feeds user input to
 this agent repeatedly until the agent outputs a valid JSON profile block.
 """
 
-import os
+from pathlib import Path
 
 from strands import Agent
 
 from src.config import create_mantle_model
 
-_PROMPT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
+_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "intake.txt"
 
 
 def _load_prompt() -> str:
-    with open(os.path.join(_PROMPT_DIR, "intake.txt"), "r", encoding="utf-8") as f:
-        return f.read()
+    return _PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def create_intake_agent() -> Agent:

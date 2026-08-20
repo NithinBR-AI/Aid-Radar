@@ -16,21 +16,19 @@ Eligibility Agent, plus the hardened monitor prompt to enforce the
 "notify only on changes" rule.
 """
 
-import os
+from pathlib import Path
 
 from strands import Agent
 
 from src.config import create_mantle_model
-from src.tools.eligibility_checker import eligibility_checker
-from src.tools.application_finder import application_finder
 
-_PROMPT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
+_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "monitor.txt"
 
 
 def _load_prompt() -> str:
-    with open(os.path.join(_PROMPT_DIR, "monitor.txt"), "r", encoding="utf-8") as f:
-        return f.read()
+    return _PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def create_monitor_agent() -> Agent:
-    return Agent(model=create_mantle_model(0.1), system_prompt=_load_prompt(), tools=[eligibility_checker, application_finder])
+    # No tools — receives pre-computed diff in prompt, writes narrative only.
+    return Agent(model=create_mantle_model(0.1), system_prompt=_load_prompt(), tools=[])

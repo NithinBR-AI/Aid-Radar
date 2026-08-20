@@ -14,18 +14,17 @@ Has NO tools — it's purely a language generation agent. All data comes
 from the eligibility results passed in the prompt.
 """
 
-import os
+from pathlib import Path
 
 from strands import Agent
 
 from src.config import create_mantle_model
 
-_PROMPT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "prompts")
+_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "recommendation.txt"
 
 
 def _load_prompt() -> str:
-    with open(os.path.join(_PROMPT_DIR, "recommendation.txt"), "r", encoding="utf-8") as f:
-        return f.read()
+    return _PROMPT_PATH.read_text(encoding="utf-8")
 
 
 def create_recommendation_agent() -> Agent:
