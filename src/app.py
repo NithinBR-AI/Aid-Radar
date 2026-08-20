@@ -654,6 +654,59 @@ def _render_whatif_comparison(original: dict, modified: dict):
 
 
 # ---------------------------------------------------------------------------
+# Notification preference (mock — wired to session state only)
+# ---------------------------------------------------------------------------
+def _show_notification_preference():
+    if "notification_saved" not in st.session_state:
+        st.session_state.notification_saved = False
+    if "notification_channel" not in st.session_state:
+        st.session_state.notification_channel = "email"
+
+    if st.session_state.notification_saved:
+        channel = st.session_state.get("notification_value", "")
+        st.markdown(f"""
+        <div style="background:#F1F8E9;border:1px solid #C5E1A5;border-radius:8px;
+                    padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:#33691E;">
+            ✅ Notification preference saved — we'll alert <strong>{channel}</strong> if your eligibility changes.
+        </div>
+        """, unsafe_allow_html=True)
+        return
+
+    with st.expander("Set up change notifications", expanded=False):
+        st.markdown(
+            "<div style='font-size:0.88rem;color:#555;margin-bottom:0.6rem;'>"
+            "AidRadar will notify you when the Monitor Agent detects a change in your eligibility "
+            "— for example when federal poverty guidelines update each January."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        col_ch, col_val, col_btn = st.columns([1.2, 2.5, 1])
+        with col_ch:
+            channel = st.selectbox(
+                "Notify via",
+                ["Email", "Phone (SMS)"],
+                label_visibility="collapsed",
+                key="notif_channel_select",
+            )
+        with col_val:
+            placeholder = "you@example.com" if channel == "Email" else "+1 (555) 000-0000"
+            value = st.text_input(
+                "Contact",
+                placeholder=placeholder,
+                label_visibility="collapsed",
+                key="notif_value_input",
+            )
+        with col_btn:
+            if st.button("Save", use_container_width=True, key="save_notification"):
+                if value.strip():
+                    st.session_state.notification_saved = True
+                    st.session_state.notification_value = value.strip()
+                    st.rerun()
+                else:
+                    st.warning("Please enter a value first.")
+
+
+# ---------------------------------------------------------------------------
 # Results dashboard
 # ---------------------------------------------------------------------------
 def _parse_eligibility_json(text: str) -> dict | None:
@@ -704,7 +757,7 @@ def show_results():
         """, unsafe_allow_html=True)
 
         st.markdown("""
-        <div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:0.8rem;">
+        <div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.8rem;">
             <div style="font-size:1.4rem;">🔔</div>
             <div>
                 <div style="font-weight:700;color:#1B5E20;font-size:0.95rem;">Your profile is saved — AidRadar is watching</div>
@@ -715,6 +768,9 @@ def show_results():
             </div>
         </div>
         """, unsafe_allow_html=True)
+
+        # Notification preference
+        _show_notification_preference()
 
         # Program cards
         st.markdown("### Eligible Programs")
@@ -810,7 +866,8 @@ def show_results():
         if st.button("Start Over", use_container_width=True):
             for key in ["stage", "messages", "intake_agent", "profile",
                         "eligibility_results", "report", "monitor_notifications", "whatif_results",
-                        "baseline_programs", "profile_id"]:
+                        "baseline_programs", "profile_id", "notification_saved",
+                        "notification_value", "notification_channel"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()

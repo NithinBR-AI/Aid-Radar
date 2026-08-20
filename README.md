@@ -6,6 +6,8 @@ Over $60 billion in federal benefits go unclaimed every year — not because peo
 
 Built with [Strands Agents SDK](https://github.com/strands-agents) and Amazon Bedrock for the [Agents for Humans](https://agentsforhumans.devpost.com/) hackathon — Good Neighbor Track.
 
+**Live demo:** [https://aid-radar.streamlit.app](https://aid-radar.streamlit.app)
+
 ## Architecture
 
 [View Architecture Diagram](docs/architecture.html)
