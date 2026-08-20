@@ -384,6 +384,34 @@ def show_landing():
         """, unsafe_allow_html=True)
 
     st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### How it works")
+    st.markdown("""
+    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+        <div style="flex:1;min-width:180px;background:white;border:1px solid #E8E8E4;border-radius:14px;padding:1.2rem;text-align:center;">
+            <div style="font-size:1.6rem;margin-bottom:0.4rem;">💬</div>
+            <div style="font-weight:700;color:#1A1A18;margin-bottom:0.3rem;">1. Intake Agent</div>
+            <div style="color:#666;font-size:0.85rem;">Asks 10 questions about your household — income, size, state, age. No SSN needed.</div>
+        </div>
+        <div style="flex:0;display:flex;align-items:center;color:#ccc;font-size:1.4rem;padding:0 0.2rem;">→</div>
+        <div style="flex:1;min-width:180px;background:white;border:1px solid #E8E8E4;border-radius:14px;padding:1.2rem;text-align:center;">
+            <div style="font-size:1.6rem;margin-bottom:0.4rem;">⚙️</div>
+            <div style="font-weight:700;color:#1A1A18;margin-bottom:0.3rem;">2. Eligibility Agent</div>
+            <div style="color:#666;font-size:0.85rem;">Runs your profile through PolicyEngine — the same open-source engine used by governments — across 8 programs.</div>
+        </div>
+        <div style="flex:0;display:flex;align-items:center;color:#ccc;font-size:1.4rem;padding:0 0.2rem;">→</div>
+        <div style="flex:1;min-width:180px;background:white;border:1px solid #E8E8E4;border-radius:14px;padding:1.2rem;text-align:center;">
+            <div style="font-size:1.6rem;margin-bottom:0.4rem;">📋</div>
+            <div style="font-weight:700;color:#1A1A18;margin-bottom:0.3rem;">3. Recommendation Agent</div>
+            <div style="color:#666;font-size:0.85rem;">Generates your report: estimated monthly benefit, documents needed, and direct application links.</div>
+        </div>
+        <div style="flex:0;display:flex;align-items:center;color:#ccc;font-size:1.4rem;padding:0 0.2rem;">→</div>
+        <div style="flex:1;min-width:180px;background:#F0FAF4;border:1px solid #A5D6A7;border-radius:14px;padding:1.2rem;text-align:center;">
+            <div style="font-size:1.6rem;margin-bottom:0.4rem;">🔔</div>
+            <div style="font-weight:700;color:#1B5E20;margin-bottom:0.3rem;">4. Monitor Agent</div>
+            <div style="color:#2E7D32;font-size:0.85rem;">Runs every January on AWS EventBridge. Re-checks your saved profile when FPL guidelines update. Notifies you only if something changed.</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
     col_left, col_center, col_right = st.columns([1, 2, 1])
     with col_center:
@@ -466,8 +494,9 @@ def show_processing():
 
     status = st.status("Running AidRadar pipeline...", expanded=True)
     try:
-        status.write("**Step 1/2** — Eligibility Agent checking 8 programs via PolicyEngine...")
-        status.write("**Step 2/2** — Recommendation Agent generating your benefits report...")
+        status.write("🤖 **Intake Agent** — profile collected ✓")
+        status.write("⚙️ **Eligibility Agent** — calling PolicyEngine across 8 programs...")
+        status.write("📋 **Recommendation Agent** — generating your benefits report...")
 
         result = run_pipeline(st.session_state.profile)
 
@@ -664,6 +693,19 @@ def show_results():
             <div class="label">You may be eligible for</div>
             <div class="value">${total_monthly:,.0f}/month</div>
             <div class="sub">${total_annual:,.0f}/year across {eligible_count} programs</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.markdown("""
+        <div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:1.2rem;display:flex;align-items:center;gap:0.8rem;">
+            <div style="font-size:1.4rem;">🔔</div>
+            <div>
+                <div style="font-weight:700;color:#1B5E20;font-size:0.95rem;">Your profile is saved — AidRadar is watching</div>
+                <div style="color:#2E7D32;font-size:0.85rem;margin-top:0.2rem;">
+                    Every January, federal poverty guidelines update. If your eligibility changes,
+                    the Monitor Agent will catch it automatically — no forms to re-fill.
+                </div>
+            </div>
         </div>
         """, unsafe_allow_html=True)
 
