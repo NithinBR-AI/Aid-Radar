@@ -4,7 +4,14 @@ Run with: streamlit run src/app.py
 """
 
 import json
+import os
 import re
+import sys
+
+# Streamlit Cloud runs files from the repo root — ensure it's on sys.path
+_repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
 
 import streamlit as st
 
