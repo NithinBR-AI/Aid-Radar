@@ -418,9 +418,9 @@
           <div class="agent-icon elig">✅</div>
           <div class="agent-info">
             <div class="agent-name">Eligibility Agent</div>
-            <div class="agent-desc">Calls eligibility_checker tool<br>Calls application_finder tool</div>
+            <div class="agent-desc">Interprets PolicyEngine results<br>Calls application_finder tool</div>
           </div>
-          <div class="agent-tag tag-tool">2 tools</div>
+          <div class="agent-tag tag-tool">1 tool</div>
         </div>
 
         <div class="flow-arrow">↓</div>
@@ -429,9 +429,9 @@
           <div class="agent-icon rec">📋</div>
           <div class="agent-info">
             <div class="agent-name">Recommendation Agent</div>
-            <div class="agent-desc">Generates actionable report<br>Benefits, amounts, apply links</div>
+            <div class="agent-desc">Generates actionable report<br>Calls estimate_cliff_effect tool</div>
           </div>
-          <div class="agent-tag tag-llm">LLM only</div>
+          <div class="agent-tag tag-tool">1 tool</div>
         </div>
 
         <div class="flow-arrow">↓ <span style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">scheduled</span></div>
@@ -442,7 +442,7 @@
             <div class="agent-name">Monitor Agent</div>
             <div class="agent-desc">Re-checks eligibility on FPL<br>threshold changes · notifies user</div>
           </div>
-          <div class="agent-tag tag-sched">EventBridge</div>
+          <div class="agent-tag tag-tool">2 tools</div>
         </div>
 
         <div class="bedrock-row">
@@ -469,7 +469,7 @@
       <div class="tool-emoji">⚖️</div>
       <div class="tool-info">
         <div class="tool-name">PolicyEngine</div>
-        <div class="tool-desc">7 programs · SNAP, Medicaid,<br>WIC, TANF, SSI, Lifeline, FSM</div>
+        <div class="tool-desc">8 programs · SNAP, Medicaid, WIC,<br>TANF, SSI, Lifeline, LIHEAP, FSM</div>
       </div>
     </div>
 
