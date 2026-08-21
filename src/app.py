@@ -560,7 +560,7 @@ def _show_whatif_section(base_profile: dict, original_programs: dict):
     col1, col2, col3 = st.columns(3)
     with col1:
         wi_income = st.slider(
-            "Monthly Income ($)",
+            f"Monthly Income ($) — current: ${int(orig_income):,}",
             min_value=0,
             max_value=10000,
             value=int(orig_income),
@@ -568,9 +568,9 @@ def _show_whatif_section(base_profile: dict, original_programs: dict):
             key="wi_income",
         )
     with col2:
-        wi_adults = st.slider("Number of Adults", 1, 4, orig_adults, key="wi_adults")
+        wi_adults = st.slider(f"Number of Adults — current: {orig_adults}", 1, 4, orig_adults, key="wi_adults")
     with col3:
-        wi_children = st.slider("Number of Children", 0, 6, orig_children, key="wi_children")
+        wi_children = st.slider(f"Number of Children — current: {orig_children}", 0, 6, orig_children, key="wi_children")
 
     changed = (wi_income != int(orig_income)) or (wi_adults != orig_adults) or (wi_children != orig_children)
 
@@ -792,11 +792,6 @@ def show_results():
                 cliff_detected = prog.get("cliff_detected", False)
 
                 amount_html = f'<div class="amount">${monthly:,.2f}/mo</div>' if monthly else '<div class="amount">Coverage (no $ estimate)</div>'
-                cascade_html = ""
-                if cascading:
-                    cascade_names = ", ".join(c.replace("_", " ").title() for c in cascading)
-                    cascade_html = f'<div style="margin-top:0.5rem;font-size:0.8rem;color:#F57F17;">&#x1F517; Unlocks: {cascade_names}</div>'
-
                 apply_html = f'<div style="margin-top:0.5rem;"><a href="{url}" target="_blank" style="color:#1B3A5C;font-weight:600;">Apply here &rarr;</a></div>' if url else ""
 
                 st.markdown(f"""
@@ -805,9 +800,12 @@ def show_results():
                     <h4>{name}</h4>
                     {amount_html}
                     {apply_html}
-                    {cascade_html}
                 </div>
                 """, unsafe_allow_html=True)
+
+                if cascading:
+                    cascade_names = ", ".join(c.replace("_", " ").title() for c in cascading)
+                    st.caption(f"\U0001f517 Unlocks: {cascade_names}")
 
                 if cliff_detected:
                     st.warning(
@@ -831,15 +829,6 @@ def show_results():
                 </div>
                 """, unsafe_allow_html=True)
 
-        # Cascading benefits
-        cascading_programs = [p for p in eligible if p.get("cascading_benefits")]
-        if cascading_programs:
-            st.markdown("""
-            <div class="cascade-box">
-                <h4>&#x1F4A1; Cascading Benefits</h4>
-                <div>Applying for one program can automatically qualify you for others — saving time and paperwork.</div>
-            </div>
-            """, unsafe_allow_html=True)
 
     # What If simulator
     if st.session_state.profile:
