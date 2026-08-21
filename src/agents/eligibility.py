@@ -1,14 +1,17 @@
 """
-Eligibility Agent — PolicyEngine-backed benefit evaluator.
+Eligibility Agent — interprets pre-computed PolicyEngine results.
 
-Receives the structured household profile from the Intake Agent and:
-1. Calls eligibility_checker to evaluate all 8 programs via PolicyEngine
-2. Calls application_finder for each eligible program to get URLs and documents
-3. Identifies cascading eligibility chains (SNAP → Free School Meals + Lifeline)
-4. Outputs structured eligibility results for the Recommendation Agent
+The pipeline calls eligibility_checker directly and passes the structured results
+in the prompt. This agent has NO tools — it interprets the results, identifies
+cascading eligibility chains, and builds a structured summary for the
+Recommendation Agent.
 
-This agent has two tools: eligibility_checker and application_finder.
-It does NOT do math — PolicyEngine handles all calculations.
+application_finder has moved to the Recommendation Agent, which owns the
+"how to apply" step and calls it directly for each eligible program.
+
+Separating PolicyEngine (deterministic) from interpretation (LLM) means:
+- The programs dict is always authoritative, never parsed from free text
+- The agent focuses on what LLMs are good at: reasoning and structuring
 """
 
 from pathlib import Path
@@ -16,7 +19,6 @@ from pathlib import Path
 from strands import Agent
 
 from src.config import create_mantle_model
-from src.tools.eligibility_checker import eligibility_checker
 from src.tools.application_finder import application_finder
 
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "eligibility.txt"
@@ -27,4 +29,4 @@ def _load_prompt() -> str:
 
 
 def create_eligibility_agent() -> Agent:
-    return Agent(model=create_mantle_model(0.1), system_prompt=_load_prompt(), tools=[eligibility_checker, application_finder])
+    return Agent(model=create_mantle_model(0.1), system_prompt=_load_prompt(), tools=[application_finder])

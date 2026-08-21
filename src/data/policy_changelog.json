@@ -1,0 +1,95 @@
+{
+  "snap": [
+    {
+      "date": "2024-10-01",
+      "states": ["ALL"],
+      "change": "FY2025 SNAP benefit tables updated. Maximum allotments increased 3.0% based on Thrifty Food Plan adjustments.",
+      "impact": "benefit_amount_change",
+      "source": "USDA FNS — October 2024 cost of living adjustment"
+    },
+    {
+      "date": "2024-01-01",
+      "states": ["ALL"],
+      "change": "2024 Federal Poverty Level thresholds updated. Gross income limit for SNAP raised from 130% to reflect new FPL baseline.",
+      "impact": "eligibility_threshold_change",
+      "source": "HHS 2024 Poverty Guidelines — effective January 2024"
+    }
+  ],
+  "medicaid": [
+    {
+      "date": "2024-04-01",
+      "states": ["ALL"],
+      "change": "Medicaid continuous enrollment unwind completed. States resumed eligibility redeterminations. Some households previously protected by continuous enrollment may now be subject to review.",
+      "impact": "eligibility_rule_change",
+      "source": "CMS — Consolidated Appropriations Act 2023 unwind"
+    },
+    {
+      "date": "2024-01-01",
+      "states": ["ALL"],
+      "change": "2024 FPL thresholds updated. Medicaid income limits adjusted in ACA-expansion states.",
+      "impact": "eligibility_threshold_change",
+      "source": "HHS 2024 Poverty Guidelines"
+    }
+  ],
+  "wic": [
+    {
+      "date": "2024-10-01",
+      "states": ["ALL"],
+      "change": "WIC food package updated. Increased fruit and vegetable cash value benefit from $24 to $26/month for most participants.",
+      "impact": "benefit_amount_change",
+      "source": "USDA FNS — WIC food package update October 2024"
+    }
+  ],
+  "tanf": [
+    {
+      "date": "2024-01-01",
+      "states": ["CA"],
+      "change": "CalWORKs maximum aid payment increased 3.6% effective January 2024.",
+      "impact": "benefit_amount_change",
+      "source": "California DSS — CalWORKs 2024 COLA"
+    },
+    {
+      "date": "2024-01-01",
+      "states": ["NY"],
+      "change": "New York Safety Net Assistance and Family Assistance grants increased 3.6% effective January 2024.",
+      "impact": "benefit_amount_change",
+      "source": "OTDA — 2024 COLA"
+    }
+  ],
+  "liheap": [
+    {
+      "date": "2024-10-01",
+      "states": ["ALL"],
+      "change": "FY2025 LIHEAP funding allocations released. Benefit amounts vary by state and heating season demand.",
+      "impact": "benefit_amount_change",
+      "source": "HHS ACF — FY2025 LIHEAP block grant allocations"
+    }
+  ],
+  "free_school_meals": [
+    {
+      "date": "2024-07-01",
+      "states": ["ALL"],
+      "change": "SY2024-25 free and reduced-price meal income thresholds updated to reflect 2024 FPL. Free meal threshold: 130% FPL; reduced: 185% FPL.",
+      "impact": "eligibility_threshold_change",
+      "source": "USDA FNS — SY2024-25 income eligibility guidelines"
+    }
+  ],
+  "lifeline": [
+    {
+      "date": "2024-01-01",
+      "states": ["ALL"],
+      "change": "Lifeline benefit remains at $9.25/month standard and $34.25/month on qualifying Tribal lands. No change from 2023.",
+      "impact": "no_change",
+      "source": "FCC — 2024 Lifeline program rules"
+    }
+  ],
+  "ssi": [
+    {
+      "date": "2024-01-01",
+      "states": ["ALL"],
+      "change": "SSI federal benefit rate increased 3.2% COLA to $943/month for individuals, $1,415/month for couples.",
+      "impact": "benefit_amount_change",
+      "source": "SSA — 2024 COLA announcement"
+    }
+  ]
+}

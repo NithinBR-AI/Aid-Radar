@@ -5,12 +5,20 @@ Decoupled from Streamlit. Called by app.py (UI wrapper) and monitor_runner.py (c
 """
 
 import json
+import logging
 from dataclasses import dataclass, field
 
 from src.agents import create_monitor_agent
 from src.db.profile_store import get_profile, update_snapshot
 from src.pipeline.runner import build_eligibility_profile
 from src.tools.eligibility_checker import eligibility_checker
+
+logger = logging.getLogger(__name__)
+
+# Changes below this threshold ($/month) are treated as rounding noise, not real changes.
+# SNAP and most programs adjust by small cents-level amounts when FPL changes slightly.
+# $5/month was chosen to avoid alerting users about sub-meaningful fluctuations.
+_BENEFIT_CHANGE_THRESHOLD = 5
 
 
 @dataclass
@@ -46,7 +54,7 @@ def _diff_snapshots(previous: dict, current: dict) -> tuple[list, list, list]:
         elif prev_elig and curr_elig:
             prev_amt = (prev.get("estimated_benefit") or {}).get("monthly", 0) or 0
             curr_amt = (curr.get("estimated_benefit") or {}).get("monthly", 0) or 0
-            if abs(curr_amt - prev_amt) > 5:
+            if abs(curr_amt - prev_amt) > _BENEFIT_CHANGE_THRESHOLD:
                 changed.append((name, prev_amt, curr_amt))
 
     return gained, lost, changed
@@ -64,16 +72,34 @@ def run_monitor_check(
     The income passed in is the original profile income — Monitor detects FPL
     policy changes, not life events.
     """
+    if not isinstance(intake_profile, dict) or not intake_profile.get("state"):
+        return MonitorResult(
+            original_income=0,
+            new_income=0,
+            error="Invalid intake profile passed to monitor check.",
+        )
+
     orig_income = int(intake_profile.get("monthly_income", 0))
 
     # Load from DynamoDB; fall back to in-session baseline if not found
     saved = get_profile(profile_id) if profile_id else None
     previous_snapshot = saved["eligibility_snapshot"] if saved else baseline_programs
 
-    # Re-run eligibility at the same income — any differences are rule changes
-    eligibility_profile = build_eligibility_profile(intake_profile)
+    # Re-run eligibility at the same income — any differences are rule changes.
+    # build_eligibility_profile() converts the intake schema to eligibility_checker's
+    # expected schema. validate_profile() runs inside eligibility_checker.
+    try:
+        eligibility_profile = build_eligibility_profile(intake_profile)
+    except ValueError as e:
+        return MonitorResult(
+            original_income=orig_income,
+            new_income=orig_income,
+            error=f"Profile schema error: {e}",
+        )
+
     raw = eligibility_checker(json.dumps(eligibility_profile))
     if raw.get("status") != "success":
+        logger.error("monitor_check eligibility_checker failed profile_id=%s", profile_id)
         return MonitorResult(
             original_income=orig_income,
             new_income=orig_income,
@@ -83,11 +109,22 @@ def run_monitor_check(
     new_snapshot = raw["content"][0]["json"]["programs"]
 
     if profile_id:
-        update_snapshot(profile_id, new_snapshot)
+        # Pass already-loaded snapshot data to avoid a redundant DynamoDB read in update_snapshot
+        update_snapshot(
+            profile_id,
+            new_snapshot,
+            current_snapshot=saved["eligibility_snapshot"] if saved else None,
+            current_history=saved.get("snapshot_history", []) if saved else None,
+        )
 
     gained, lost, changed = _diff_snapshots(previous_snapshot, new_snapshot)
+    logger.info(
+        "monitor_check diff profile_id=%s gained=%s lost=%s changed=%d",
+        profile_id, gained, lost, len(changed),
+    )
 
     if not gained and not lost and not changed:
+        logger.info("monitor_check no_changes profile_id=%s", profile_id)
         return MonitorResult(
             original_income=orig_income,
             new_income=orig_income,
@@ -95,17 +132,28 @@ def run_monitor_check(
             agent_output="No eligibility changes detected under current federal guidelines.",
         )
 
-    # Build narrative prompt
+    # Build narrative prompt — include profile_id so agent can call get_profile_history,
+    # state and snapshot date so it can call check_policy_change with correct context.
     changed_str = [f"{n}: ${p:,.0f}/mo → ${c:,.0f}/mo" for n, p, c in changed]
+    state = intake_profile.get("state", "unknown").upper()
+    snapshot_date = (saved or {}).get("updated_at", "2024-01-01")[:10]  # ISO date only
+
+    history_instruction = (
+        f"Call get_profile_history(profile_id='{profile_id}') to check for trends, "
+        "then " if profile_id else ""
+    )
+
     prompt = (
-        "You are the AidRadar Monitor Agent running a scheduled re-check triggered by "
-        "updated federal poverty guidelines.\n\n"
+        "You are the AidRadar Monitor Agent running a scheduled re-check.\n\n"
+        + (f"**Profile ID:** {profile_id}\n" if profile_id else "**Profile ID:** not available — skip get_profile_history\n")
+        + f"**State:** {state}\n"
+        f"**Previous snapshot date:** {snapshot_date}\n\n"
         "**Eligibility changes (pre-calculated by PolicyEngine — do NOT recalculate):**\n"
         f"- Newly eligible: {', '.join(gained) if gained else 'none'}\n"
         f"- Lost eligibility: {', '.join(lost) if lost else 'none'}\n"
         f"- Benefit amounts changed: {', '.join(changed_str) if changed_str else 'none'}\n\n"
-        "Write a short, human-friendly notification (3-5 sentences). "
-        "Plain English. Name the programs. Tell the user what to do next."
+        f"Follow your instructions: {history_instruction}call check_policy_change for "
+        "each changed program, then write the narrative. Plain English. 3-5 sentences."
     )
 
     agent = create_monitor_agent()

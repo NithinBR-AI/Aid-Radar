@@ -16,7 +16,15 @@ application URLs, required documents, and process notes — data that
 PolicyEngine doesn't provide.
 """
 
-from src.tools.eligibility_checker import eligibility_checker
-from src.tools.application_finder import application_finder
-
-ALL_TOOLS = [eligibility_checker, application_finder]
+def __getattr__(name):
+    if name == "eligibility_checker":
+        from src.tools.eligibility_checker import eligibility_checker
+        return eligibility_checker
+    if name == "application_finder":
+        from src.tools.application_finder import application_finder
+        return application_finder
+    if name == "ALL_TOOLS":
+        from src.tools.eligibility_checker import eligibility_checker
+        from src.tools.application_finder import application_finder
+        return [eligibility_checker, application_finder]
+    raise AttributeError(f"module 'src.tools' has no attribute {name!r}")

@@ -70,7 +70,15 @@ PROGRAM_VARIABLES = {
     },
 }
 
+# Federal Poverty Level base figures — updated annually by HHS each January.
+# Source: 2024 HHS Poverty Guidelines (https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines)
+# Update these values each year when HHS publishes new guidelines.
+FPL_BASE = 15_650          # 1-person household annual FPL
+FPL_PER_ADDITIONAL = 5_380  # increment per additional household member
+
 LIHEAP_FPL_THRESHOLD = {
+    # State-specific LIHEAP income limits as % of FPL.
+    # Source: state LIHEAP program pages (last verified 2024).
     "CA": 200,
     "TX": 150,
     "NY": 165,
@@ -131,9 +139,7 @@ def _check_liheap(profile: dict) -> dict:
     if household_size < 1:
         household_size = 1
 
-    fpl_base = 15650
-    fpl_per_person = 5380
-    fpl_guideline = fpl_base + (household_size - 1) * fpl_per_person
+    fpl_guideline = FPL_BASE + (household_size - 1) * FPL_PER_ADDITIONAL
 
     annual_income = profile.get("monthly_income", 0) * 12
     if not annual_income and profile.get("adults"):

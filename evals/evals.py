@@ -15,6 +15,7 @@ import sys
 from src.tools.eligibility_checker import eligibility_checker
 from src.agents import (
     create_intake_agent,
+    create_eligibility_agent,
     create_recommendation_agent,
     create_monitor_agent,
 )
@@ -391,6 +392,168 @@ def run_monitor_eval() -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Agent eval 4 — Eligibility Agent: calls application_finder for eligible programs
+# ---------------------------------------------------------------------------
+
+def run_eligibility_agent_eval() -> dict:
+    print("\n" + "=" * 60)
+    print("  AGENT EVAL 4 — Eligibility Agent: calls application_finder")
+    print("=" * 60)
+
+    case = PROFILES[0]  # CA family — SNAP, Medicaid, WIC eligible
+    raw = eligibility_checker(json.dumps(case["profile"]))
+    programs = raw["content"][0]["json"]["programs"]
+
+    agent = create_eligibility_agent()
+    prompt = (
+        "The pipeline has already run PolicyEngine. Here are the eligibility results for all 8 programs.\n\n"
+        f"**Household Profile:**\n```json\n{json.dumps(case['profile'], indent=2)}\n```\n\n"
+        f"**PolicyEngine Results:**\n```json\n{json.dumps(programs, indent=2)}\n```\n\n"
+        "Now call application_finder for each eligible program, identify cascading eligibility, "
+        "and build the structured output for the Recommendation Agent."
+    )
+
+    print("  Running Eligibility Agent...")
+    result = agent(prompt)
+    output = str(result).lower()
+
+    errors = []
+    # Must mention application URLs or documents for eligible programs
+    for keyword in ["application_url", "apply", "snap", "medicaid"]:
+        if keyword not in output:
+            errors.append(f"missing expected content: '{keyword}'")
+        else:
+            print(f"  PASS  output contains '{keyword}'")
+
+    # Must not mention eligibility_checker (agent should not re-run it)
+    if "eligibility_checker" in output:
+        errors.append("agent attempted to call eligibility_checker (should not re-run PolicyEngine)")
+    else:
+        print("  PASS  did not call eligibility_checker")
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL  {e}")
+
+    return {"id": "eligibility_agent_tool_use", "passed": len(errors) == 0, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Agent eval 5 — Recommendation Agent: cliff effect warning for near-threshold profile
+# ---------------------------------------------------------------------------
+
+def run_cliff_effect_eval() -> dict:
+    print("\n" + "=" * 60)
+    print("  AGENT EVAL 5 — Recommendation Agent: cliff effect warning")
+    print("=" * 60)
+
+    # CA veteran at $2,200/mo — likely near SNAP/Medicaid threshold, cliff warning expected
+    case = next(c for c in PROFILES if c["id"] == "ca_veteran_mid_income")
+    raw = eligibility_checker(json.dumps(case["profile"]))
+    programs = raw["content"][0]["json"]["programs"]
+    eligibility_text = json.dumps(raw["content"][0]["json"], indent=2)
+
+    agent = create_recommendation_agent()
+    prompt = (
+        "Here is the household profile, eligibility results, and the full eligibility profile "
+        "JSON (pass this to estimate_cliff_effect if you call it). "
+        "Generate the full benefits report following your instructions.\n\n"
+        f"**Household Profile:**\n```json\n{json.dumps(case['profile'], indent=2)}\n```\n\n"
+        f"**Eligibility Profile (for estimate_cliff_effect):**\n```json\n{json.dumps(case['profile'], indent=2)}\n```\n\n"
+        f"**Eligibility Agent Results:**\n{eligibility_text}\n\n"
+        f"**Raw Programs (for cliff effect context):**\n```json\n{json.dumps(programs, indent=2)}\n```"
+    )
+
+    print("  Running Recommendation Agent (cliff effect check)...")
+    result = agent(prompt)
+    output = str(result).lower()
+
+    errors = []
+    # Report must include veteran section
+    if "veteran" not in output:
+        errors.append("missing veteran section in report")
+    else:
+        print("  PASS  includes veteran section")
+
+    # Must include standard report elements
+    for keyword in ["medicaid", "apply", "disclaimer"]:
+        if keyword not in output:
+            errors.append(f"missing expected content: '{keyword}'")
+        else:
+            print(f"  PASS  output contains '{keyword}'")
+
+    # Cliff warning or income note should appear for income-based programs
+    cliff_mentioned = any(kw in output for kw in ["cliff", "income increases", "500", "benefit may drop"])
+    if not cliff_mentioned:
+        errors.append("no cliff warning detected — estimate_cliff_effect may not have been called")
+    else:
+        print("  PASS  cliff effect warning present")
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL  {e}")
+
+    return {"id": "recommendation_cliff_effect", "passed": len(errors) == 0, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# Agent eval 6 — Monitor Agent: policy_driven vs situation_driven narrative
+# ---------------------------------------------------------------------------
+
+def run_monitor_policy_eval() -> dict:
+    print("\n" + "=" * 60)
+    print("  AGENT EVAL 6 — Monitor Agent: policy change vs situation change")
+    print("=" * 60)
+
+    agent = create_monitor_agent()
+
+    # Simulate a change with a real profile_id-less run (no DynamoDB needed)
+    # The agent should call check_policy_change and produce a policy-framed narrative
+    prompt = (
+        "You are the AidRadar Monitor Agent running a scheduled re-check.\n\n"
+        "**Profile ID:** not available — skip get_profile_history\n"
+        "**State:** CA\n"
+        "**Previous snapshot date:** 2024-01-01\n\n"
+        "**Eligibility changes (pre-calculated by PolicyEngine — do NOT recalculate):**\n"
+        "- Newly eligible: SNAP\n"
+        "- Lost eligibility: none\n"
+        "- Benefit amounts changed: none\n\n"
+        "Follow your instructions: call check_policy_change for each changed program, "
+        "then write the narrative. Plain English. 3-5 sentences."
+    )
+
+    print("  Running Monitor Agent (policy change detection)...")
+    result = agent(prompt)
+    output = str(result).lower()
+
+    errors = []
+    # Must mention SNAP
+    if "snap" not in output:
+        errors.append("did not mention SNAP in narrative")
+    else:
+        print("  PASS  mentions SNAP")
+
+    # Must include action guidance
+    if not any(kw in output for kw in ["apply", "eligible", "qualify"]):
+        errors.append("missing action guidance")
+    else:
+        print("  PASS  includes action guidance")
+
+    # Should reference policy or rules (since SNAP has a 2024 FPL change in changelog)
+    policy_mentioned = any(kw in output for kw in ["federal", "guideline", "rule", "policy", "threshold", "poverty"])
+    if not policy_mentioned:
+        errors.append("no policy context in narrative — check_policy_change may not have been called")
+    else:
+        print("  PASS  references policy context")
+
+    if errors:
+        for e in errors:
+            print(f"  FAIL  {e}")
+
+    return {"id": "monitor_policy_change", "passed": len(errors) == 0, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 
@@ -416,8 +579,11 @@ if __name__ == "__main__":
     tool_results = run_tool_evals()
     agent_results = [
         run_intake_eval(),
+        run_eligibility_agent_eval(),
         run_recommendation_eval(),
+        run_cliff_effect_eval(),
         run_monitor_eval(),
+        run_monitor_policy_eval(),
     ]
     all_passed = print_summary(tool_results, agent_results)
     sys.exit(0 if all_passed else 1)
