@@ -34,9 +34,24 @@ st.set_page_config(
 # Custom CSS
 # ---------------------------------------------------------------------------
 st.markdown("""
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@700;800&display=swap" rel="stylesheet">
 <style>
     /* Hide default streamlit branding */
     #MainMenu, footer, header {visibility: hidden;}
+
+    /* Override chat colors to match navy design system */
+    [data-testid="stChatMessageAvatarAssistant"] {
+        background-color: #1B3A5C !important;
+    }
+    [data-testid="stChatMessageAvatarUser"] {
+        background-color: white !important;
+        border: 2px solid #1B3A5C !important;
+        box-sizing: border-box !important;
+    }
+    [data-testid="stChatMessageAvatarUser"] * {
+        color: #1B3A5C !important;
+        fill: #1B3A5C !important;
+    }
 
     /* Hero section */
     .hero {
@@ -49,27 +64,29 @@ st.markdown("""
         padding-right: 2rem;
     }
     .hero h1 {
-        font-size: 3.2rem;
+        font-family: 'Sora', sans-serif;
+        font-size: 3.4rem;
         margin-bottom: 0.4rem;
         color: #1B3A5C;
-        letter-spacing: -0.02em;
+        letter-spacing: -0.03em;
         font-weight: 800;
     }
     .hero .tagline {
         font-size: 1.25rem;
         color: #444;
-        margin-bottom: 0.6rem;
+        margin-bottom: 0.8rem;
         font-weight: 400;
     }
     .hero .stat {
-        font-size: 1.15rem;
-        color: #1B3A5C;
+        font-size: 1rem;
+        color: white;
         font-weight: 700;
         margin-bottom: 2rem;
         display: inline-block;
-        background: rgba(27, 58, 92, 0.08);
-        padding: 0.4rem 1.2rem;
+        background: #1B3A5C;
+        padding: 0.5rem 1.4rem;
         border-radius: 2rem;
+        letter-spacing: 0.01em;
     }
 
     /* Value prop cards */
@@ -165,8 +182,8 @@ st.markdown("""
     }
     .benefit-card .eligible-badge {
         display: inline-block;
-        background: linear-gradient(135deg, #FEF0D0, #FDDFA0);
-        color: #7A5000;
+        background: #1B3A5C;
+        color: white;
         padding: 0.2rem 0.7rem;
         border-radius: 1rem;
         font-size: 0.7rem;
@@ -189,41 +206,59 @@ st.markdown("""
     /* Big number */
     .big-number {
         text-align: center;
-        padding: 2rem;
+        padding: 2.8rem 2rem;
+        margin-top: -1rem;
         background: linear-gradient(135deg, #1B3A5C 0%, #142D48 50%, #0D1E30 100%);
-        border-radius: 20px;
+        border-radius: 24px;
         color: white;
         margin-bottom: 1.5rem;
-        box-shadow: 0 4px 20px rgba(27, 58, 92, 0.35);
+        box-shadow: 0 8px 32px rgba(27, 58, 92, 0.4);
         position: relative;
         overflow: hidden;
     }
     .big-number::before {
         content: '';
         position: absolute;
-        top: -50%;
-        right: -20%;
+        top: -40%;
+        right: -10%;
+        width: 280px;
+        height: 280px;
+        background: rgba(244, 164, 42, 0.08);
+        border-radius: 50%;
+    }
+    .big-number::after {
+        content: '';
+        position: absolute;
+        bottom: -50%;
+        left: -10%;
         width: 200px;
         height: 200px;
-        background: rgba(244, 164, 42, 0.06);
+        background: rgba(255,255,255,0.03);
         border-radius: 50%;
     }
     .big-number .value {
-        font-size: 3.2rem;
+        font-family: 'Sora', sans-serif;
+        font-size: 4.2rem;
         font-weight: 800;
-        line-height: 1.1;
-        letter-spacing: -0.02em;
+        line-height: 1;
+        letter-spacing: -0.03em;
         color: #F4A42A;
+        position: relative;
     }
     .big-number .label {
-        font-size: 1rem;
-        opacity: 0.9;
+        font-size: 1.05rem;
+        opacity: 0.85;
         font-weight: 500;
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.8rem;
     }
     .big-number .sub {
-        font-size: 0.88rem;
-        opacity: 0.75;
-        margin-top: 0.4rem;
+        font-size: 0.92rem;
+        opacity: 0.7;
+        margin-top: 0.6rem;
+        position: relative;
     }
 
     /* Cascade visualization */
@@ -369,62 +404,56 @@ def show_landing():
     </div>
     """, unsafe_allow_html=True)
 
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown("""
-        <div class="value-card">
-            <div class="icon">&#128172;</div>
-            <h3>10 Simple Questions</h3>
-            <p>A 2-minute conversational interview about your household. No SSN or sensitive data needed.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with col2:
-        st.markdown("""
-        <div class="value-card">
-            <div class="icon">&#9989;</div>
-            <h3>8 Programs Checked</h3>
-            <p>SNAP, Medicaid, WIC, TANF, SSI, LIHEAP, Lifeline, Free School Meals — all at once.</p>
-        </div>
-        """, unsafe_allow_html=True)
-    with col3:
-        st.markdown("""
-        <div class="value-card">
-            <div class="icon">&#128640;</div>
-            <h3>Instant Action Plan</h3>
-            <p>Estimated benefits, required documents, application links, and which program to apply for first.</p>
-        </div>
-        """, unsafe_allow_html=True)
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("### How it works")
     st.markdown("""
-    <div style="display:flex;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;">
-        <div style="flex:1;min-width:180px;background:white;border:1px solid #E8E8E4;border-radius:14px;padding:1.2rem;text-align:center;">
-            <div style="font-size:1.6rem;margin-bottom:0.4rem;">💬</div>
-            <div style="font-weight:700;color:#1A1A18;margin-bottom:0.3rem;">1. Intake Agent</div>
-            <div style="color:#666;font-size:0.85rem;">Asks 10 questions about your household — income, size, state, age. No SSN needed.</div>
+    <div style="margin:-0.5rem 0 1.2rem;padding:1.8rem 2rem;background:white;border-radius:16px;border:1px solid #D6E4F0;">
+        <!-- Row 1: Pipeline flow -->
+        <div style="display:flex;align-items:stretch;justify-content:center;gap:1rem;margin-bottom:1.4rem;flex-wrap:wrap;">
+            <div style="text-align:center;padding:1rem 1.2rem;background:#EEF1F5;border:1px solid #D6E4F0;border-radius:12px;min-width:100px;">
+                <div style="font-size:1.6rem;margin-bottom:0.3rem;">👨‍👩‍👧</div>
+                <div style="font-size:0.72rem;color:#1B3A5C;font-weight:700;letter-spacing:0.05em;">YOUR HOUSEHOLD</div>
+            </div>
+            <div style="color:#D6E4F0;font-size:1.8rem;line-height:1;">→</div>
+            <div style="text-align:center;padding:1rem 1.4rem;background:linear-gradient(135deg,#1B3A5C 0%,#2A5480 100%);border-radius:12px;min-width:100px;">
+                <div style="font-size:1.6rem;margin-bottom:0.3rem;">💬</div>
+                <div style="font-size:0.72rem;color:white;font-weight:700;letter-spacing:0.05em;">INTAKE</div>
+                <div style="font-size:0.62rem;color:#A8C4DC;margin-top:0.15rem;">10 questions</div>
+            </div>
+            <div style="color:#D6E4F0;font-size:1.8rem;line-height:1;">→</div>
+            <div style="text-align:center;padding:1rem 1.4rem;background:linear-gradient(135deg,#1B3A5C 0%,#2A5480 100%);border-radius:12px;min-width:100px;">
+                <div style="font-size:1.6rem;margin-bottom:0.3rem;">⚙️</div>
+                <div style="font-size:0.72rem;color:white;font-weight:700;letter-spacing:0.05em;">ELIGIBILITY</div>
+                <div style="font-size:0.62rem;color:#A8C4DC;margin-top:0.15rem;">PolicyEngine</div>
+            </div>
+            <div style="color:#D6E4F0;font-size:1.8rem;line-height:1;">→</div>
+            <div style="text-align:center;padding:1rem 1.4rem;background:linear-gradient(135deg,#1B3A5C 0%,#2A5480 100%);border-radius:12px;min-width:100px;">
+                <div style="font-size:1.6rem;margin-bottom:0.3rem;">📋</div>
+                <div style="font-size:0.72rem;color:white;font-weight:700;letter-spacing:0.05em;">REPORT</div>
+                <div style="font-size:0.62rem;color:#A8C4DC;margin-top:0.15rem;">Action plan</div>
+            </div>
+            <div style="color:#D6E4F0;font-size:1.8rem;line-height:1;">→</div>
+            <div style="text-align:center;padding:1rem 1.4rem;background:linear-gradient(135deg,#142D48 0%,#1B3A5C 100%);border-radius:12px;min-width:100px;border:1px solid #2A5480;">
+                <div style="font-size:1.6rem;margin-bottom:0.3rem;">🔔</div>
+                <div style="font-size:0.72rem;color:white;font-weight:700;letter-spacing:0.05em;">MONITOR</div>
+                <div style="font-size:0.62rem;color:#A8C4DC;margin-top:0.15rem;">Annual re-check</div>
+            </div>
         </div>
-        <div style="flex:0;display:flex;align-items:center;color:#ccc;font-size:1.4rem;padding:0 0.2rem;">→</div>
-        <div style="flex:1;min-width:180px;background:white;border:1px solid #E8E8E4;border-radius:14px;padding:1.2rem;text-align:center;">
-            <div style="font-size:1.6rem;margin-bottom:0.4rem;">⚙️</div>
-            <div style="font-weight:700;color:#1A1A18;margin-bottom:0.3rem;">2. Eligibility Agent</div>
-            <div style="color:#666;font-size:0.85rem;">Runs your profile through PolicyEngine — the same open-source engine used by governments — across 8 programs.</div>
-        </div>
-        <div style="flex:0;display:flex;align-items:center;color:#ccc;font-size:1.4rem;padding:0 0.2rem;">→</div>
-        <div style="flex:1;min-width:180px;background:white;border:1px solid #E8E8E4;border-radius:14px;padding:1.2rem;text-align:center;">
-            <div style="font-size:1.6rem;margin-bottom:0.4rem;">📋</div>
-            <div style="font-weight:700;color:#1A1A18;margin-bottom:0.3rem;">3. Recommendation Agent</div>
-            <div style="color:#666;font-size:0.85rem;">Generates your report: estimated monthly benefit, documents needed, and direct application links.</div>
-        </div>
-        <div style="flex:0;display:flex;align-items:center;color:#ccc;font-size:1.4rem;padding:0 0.2rem;">→</div>
-        <div style="flex:1;min-width:180px;background:#EEF1F5;border:1px solid #B0C4D8;border-radius:14px;padding:1.2rem;text-align:center;">
-            <div style="font-size:1.6rem;margin-bottom:0.4rem;">🔔</div>
-            <div style="font-weight:700;color:#1B3A5C;margin-bottom:0.3rem;">4. Monitor Agent</div>
-            <div style="color:#2A5480;font-size:0.85rem;">Runs every January on AWS EventBridge. Re-checks your saved profile when FPL guidelines update. Notifies you only if something changed.</div>
+        <!-- Divider label -->
+        <div style="text-align:center;font-size:0.7rem;color:#B0C4D8;font-weight:600;letter-spacing:0.08em;margin-bottom:1rem;">8 PROGRAMS CHECKED IN ONE RUN</div>
+        <!-- Row 2: Programs -->
+        <div style="display:flex;gap:0.5rem;justify-content:center;flex-wrap:wrap;">
+            <div style="background:#EEF1F5;border-left:3px solid #1B3A5C;border-radius:6px;padding:0.3rem 0.9rem;font-size:0.75rem;color:#1B3A5C;font-weight:600;">SNAP</div>
+            <div style="background:#EEF1F5;border-left:3px solid #1B3A5C;border-radius:6px;padding:0.3rem 0.9rem;font-size:0.75rem;color:#1B3A5C;font-weight:600;">Medicaid</div>
+            <div style="background:#EEF1F5;border-left:3px solid #1B3A5C;border-radius:6px;padding:0.3rem 0.9rem;font-size:0.75rem;color:#1B3A5C;font-weight:600;">WIC</div>
+            <div style="background:#EEF1F5;border-left:3px solid #1B3A5C;border-radius:6px;padding:0.3rem 0.9rem;font-size:0.75rem;color:#1B3A5C;font-weight:600;">SSI</div>
+            <div style="background:#EEF1F5;border-left:3px solid #1B3A5C;border-radius:6px;padding:0.3rem 0.9rem;font-size:0.75rem;color:#1B3A5C;font-weight:600;">Lifeline</div>
+            <div style="background:#EEF1F5;border-left:3px solid #1B3A5C;border-radius:6px;padding:0.3rem 0.9rem;font-size:0.75rem;color:#1B3A5C;font-weight:600;">TANF</div>
+            <div style="background:#EEF1F5;border-left:3px solid #1B3A5C;border-radius:6px;padding:0.3rem 0.9rem;font-size:0.75rem;color:#1B3A5C;font-weight:600;">LIHEAP</div>
+            <div style="background:#EEF1F5;border-left:3px solid #1B3A5C;border-radius:6px;padding:0.3rem 0.9rem;font-size:0.75rem;color:#1B3A5C;font-weight:600;">Free School Meals</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
+    st.markdown("<div style='margin-top:1.2rem;'></div>", unsafe_allow_html=True)
     col_left, col_center, col_right = st.columns([1, 2, 1])
     with col_center:
         if st.button("Find My Benefits", type="primary", use_container_width=True):
@@ -453,7 +482,7 @@ def show_landing():
 def show_intake():
     render_pipeline("intake")
 
-    st.markdown("#### Tell us about your household")
+    st.markdown('<h3 style="font-family:\'Sora\',sans-serif;color:#1B3A5C;letter-spacing:-0.02em;margin-bottom:0.2rem;">Tell us about your household</h3>', unsafe_allow_html=True)
 
     # Progress indicator — count non-greeting assistant messages as answered questions
     answered = max(0, sum(1 for m in st.session_state.messages if m["role"] == "user"))
@@ -570,7 +599,7 @@ def _show_whatif_section(base_profile: dict, original_programs: dict):
         "using the same real benefit calculation engine."
     )
 
-    orig_income = base_profile.get("monthly_income", 0)
+    orig_income = base_profile.get("monthly_income") or 0
 
     # intake profile uses children_under_5 + children_k12, not a pre-built children list
     _under5 = base_profile.get("children_under_5") or []
@@ -797,7 +826,9 @@ def show_results():
 
         st.markdown("""
         <div style="background:#EEF1F5;border:1px solid #B0C4D8;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.8rem;">
-            <div style="font-size:1.4rem;">🔔</div>
+            <div style="width:2rem;height:2rem;flex-shrink:0;display:flex;align-items:center;justify-content:center;">
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#1B3A5C" width="22" height="22"><path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6V11c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"/></svg>
+            </div>
             <div>
                 <div style="font-weight:700;color:#1B3A5C;font-size:0.95rem;">Your profile is saved — AidRadar is watching</div>
                 <div style="color:#2A5480;font-size:0.85rem;margin-top:0.2rem;">
@@ -824,11 +855,11 @@ def show_results():
                 cascading = prog.get("cascading_benefits", [])
                 cliff_detected = prog.get("cliff_detected", False)
 
-                amount_html = f'<div class="amount">${monthly:,.2f}/mo</div>' if monthly else '<div class="amount">Coverage (no $ estimate)</div>'
+                amount_html = f'<div class="amount">${monthly:,.2f}/mo</div>' if monthly else '<div style="font-size:0.9rem;color:#666;margin-top:0.4rem;">Coverage benefit — no $ estimate available</div>'
                 apply_html = f'<div style="margin-top:0.5rem;"><a href="{url}" target="_blank" style="color:#1B3A5C;font-weight:600;">Apply here &rarr;</a></div>' if url else ""
 
                 st.markdown(f"""
-                <div class="benefit-card" style="border-left:4px solid #F4A42A;">
+                <div class="benefit-card" style="border-left:4px solid #1B3A5C;min-height:130px;">
                     <span class="eligible-badge">ELIGIBLE</span>
                     <h4>{name}</h4>
                     {amount_html}
@@ -876,17 +907,9 @@ def show_results():
     # Monitor Agent demo
     st.markdown("---")
     st.markdown("### Monitor Agent")
-    st.markdown(
-        "Every January, federal poverty guidelines update — and millions of families silently become "
-        "eligible for programs they didn't qualify for before. AidRadar's Monitor Agent runs on a "
-        "schedule via AWS EventBridge, re-checks every saved profile against the latest PolicyEngine "
-        "rules, and **notifies only the people whose eligibility actually changed**. "
-        "No login needed. No forms to re-fill."
-    )
-
     st.caption(
-        "Your profile is saved in DynamoDB. Click below to simulate a scheduled Monitor Agent run — "
-        "it re-checks your eligibility against the latest PolicyEngine rules and reports any changes."
+        "Runs every January on AWS EventBridge — re-checks your saved profile against updated federal guidelines "
+        "and notifies you only if your eligibility changed."
     )
 
     if st.button("Run Monitor Agent", type="primary", use_container_width=True, key="run_monitor"):
@@ -929,7 +952,7 @@ def show_results():
             st.markdown(f"""
 - **State:** {state_display}
 - **Household size:** {p.get("household_size", "—")}
-- **Monthly income:** ${int(p.get("monthly_income", 0)):,}{income_note}
+- **Monthly income:** ${int(p.get("monthly_income") or 0):,}{income_note}
 - **Applicant age:** {p.get("applicant_age", "—")}
 - **Children under 5:** {len(under5)} {"— ages: " + ", ".join(str(c.get("age","?")) for c in under5) if under5 else ""}
 - **Children in K–12:** {len(k12)} {"— ages: " + ", ".join(str(c.get("age","?")) for c in k12) if k12 else ""}
@@ -979,7 +1002,6 @@ def _run_monitor_demo():
 def _render_monitor_notifications():
     data = st.session_state.monitor_notifications
     orig = data["original_income"]
-    new = data["new_income"]
     gained = data["gained"]
     lost = data["lost"]
     changed = data["changed"]
@@ -992,10 +1014,8 @@ def _render_monitor_notifications():
         <div style="font-weight:700;color:#0D47A1;margin-bottom:0.3rem;">
             Scheduled Check — Monitor Agent
         </div>
-        <div style="color:#1A1A18;">Income changed: <strong>${orig:,}/mo → ${new:,}/mo</strong></div>
         <div style="color:#555;font-size:0.85rem;margin-top:0.3rem;">
-            Profile loaded from DynamoDB. Eligibility re-calculated by PolicyEngine.
-            Diff computed against stored snapshot.
+            Profile re-checked at <strong>${orig:,}/mo</strong> · PolicyEngine re-run against current rules · Diff against stored snapshot.
         </div>
     </div>
     """, unsafe_allow_html=True)

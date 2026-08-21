@@ -83,7 +83,7 @@ def run_monitor_check(
             error="Invalid intake profile passed to monitor check.",
         )
 
-    orig_income = int(intake_profile.get("monthly_income", 0))
+    orig_income = int(intake_profile.get("monthly_income") or 0)
 
     # Load from DynamoDB; fall back to in-session baseline if not found
     saved = get_profile(profile_id) if profile_id else None

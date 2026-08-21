@@ -138,12 +138,10 @@ def build_eligibility_profile(intake_profile: dict) -> dict:
 
     children = []
     for child in intake_profile.get("children_under_5", []) or []:
-        age = child.get("age", 3)
-        # Clamp to valid range for under-5 bucket — catches intake agent classification errors
+        age = child.get("age") or 3
         children.append({"age": min(int(age), 4)})
     for child in intake_profile.get("children_k12", []) or []:
-        age = child.get("age", 10)
-        # Clamp to valid range for K-12 bucket
+        age = child.get("age") or 10
         children.append({"age": max(5, min(int(age), 18))})
     # Also handle pre-structured children list (direct API / integration path)
     if not children and intake_profile.get("children") and isinstance(intake_profile["children"], list):
