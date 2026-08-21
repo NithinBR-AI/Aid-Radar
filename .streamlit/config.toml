@@ -1,22 +1,8 @@
-# Streamlit theme configuration for AidRadar.
-# Removes default branding and applies a clean, accessible look.
-
 [theme]
-primaryColor = "#2D7A4F"
-backgroundColor = "#FAFAF8"
-secondaryBackgroundColor = "#F3F2EE"
-textColor = "#1A1A18"
-font = "sans serif"
-
-[client]
-showErrorDetails = true
+primaryColor = "#F4A42A"
+backgroundColor = "#F8F7F4"
+secondaryBackgroundColor = "#EEF1F5"
+textColor = "#1A1A2E"
 
 [server]
 headless = true
-port = 8501
-fileWatcherType = "none"
-runOnSave = false
-
-
-[browser]
-gatherUsageStats = false

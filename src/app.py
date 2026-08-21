@@ -42,7 +42,7 @@ st.markdown("""
     .hero {
         text-align: center;
         padding: 3.5rem 1rem 2.5rem;
-        background: linear-gradient(165deg, #F0FAF4 0%, #E8F5EC 40%, #FAFAF8 100%);
+        background: linear-gradient(165deg, #EEF1F5 0%, #E5EAF2 40%, #F8F7F4 100%);
         border-radius: 0 0 24px 24px;
         margin: -1rem -1rem 2rem;
         padding-left: 2rem;
@@ -51,7 +51,7 @@ st.markdown("""
     .hero h1 {
         font-size: 3.2rem;
         margin-bottom: 0.4rem;
-        color: #1A1A18;
+        color: #1B3A5C;
         letter-spacing: -0.02em;
         font-weight: 800;
     }
@@ -63,11 +63,11 @@ st.markdown("""
     }
     .hero .stat {
         font-size: 1.15rem;
-        color: #2D7A4F;
+        color: #1B3A5C;
         font-weight: 700;
         margin-bottom: 2rem;
         display: inline-block;
-        background: rgba(45, 122, 79, 0.08);
+        background: rgba(27, 58, 92, 0.08);
         padding: 0.4rem 1.2rem;
         border-radius: 2rem;
     }
@@ -123,13 +123,13 @@ st.markdown("""
         transition: all 0.3s;
     }
     .pipeline-step.active {
-        background: linear-gradient(135deg, #2D7A4F 0%, #3A9963 100%);
+        background: linear-gradient(135deg, #1B3A5C 0%, #2A5480 100%);
         color: white;
-        box-shadow: 0 2px 8px rgba(45, 122, 79, 0.3);
+        box-shadow: 0 2px 8px rgba(27, 58, 92, 0.3);
     }
     .pipeline-step.done {
-        background: #D4EDDA;
-        color: #155724;
+        background: #D6E4F0;
+        color: #1B3A5C;
     }
     .pipeline-arrow {
         display: flex;
@@ -160,13 +160,13 @@ st.markdown("""
     .benefit-card .amount {
         font-size: 1.5rem;
         font-weight: 800;
-        color: #2D7A4F;
+        color: #1B3A5C;
         letter-spacing: -0.01em;
     }
     .benefit-card .eligible-badge {
         display: inline-block;
-        background: linear-gradient(135deg, #D4EDDA, #C8E6C9);
-        color: #155724;
+        background: linear-gradient(135deg, #FEF0D0, #FDDFA0);
+        color: #7A5000;
         padding: 0.2rem 0.7rem;
         border-radius: 1rem;
         font-size: 0.7rem;
@@ -190,11 +190,11 @@ st.markdown("""
     .big-number {
         text-align: center;
         padding: 2rem;
-        background: linear-gradient(135deg, #2D7A4F 0%, #1B6E40 50%, #145533 100%);
+        background: linear-gradient(135deg, #1B3A5C 0%, #142D48 50%, #0D1E30 100%);
         border-radius: 20px;
         color: white;
         margin-bottom: 1.5rem;
-        box-shadow: 0 4px 20px rgba(45, 122, 79, 0.25);
+        box-shadow: 0 4px 20px rgba(27, 58, 92, 0.35);
         position: relative;
         overflow: hidden;
     }
@@ -205,7 +205,7 @@ st.markdown("""
         right: -20%;
         width: 200px;
         height: 200px;
-        background: rgba(255,255,255,0.05);
+        background: rgba(244, 164, 42, 0.06);
         border-radius: 50%;
     }
     .big-number .value {
@@ -213,6 +213,7 @@ st.markdown("""
         font-weight: 800;
         line-height: 1.1;
         letter-spacing: -0.02em;
+        color: #F4A42A;
     }
     .big-number .label {
         font-size: 1rem;
@@ -241,7 +242,7 @@ st.markdown("""
     /* Monitor notification cards */
     .notif-card {
         background: white;
-        border-left: 4px solid #2D7A4F;
+        border-left: 4px solid #1B3A5C;
         border-radius: 10px;
         padding: 1.1rem 1.3rem;
         margin-bottom: 0.8rem;
@@ -412,10 +413,10 @@ def show_landing():
             <div style="color:#666;font-size:0.85rem;">Generates your report: estimated monthly benefit, documents needed, and direct application links.</div>
         </div>
         <div style="flex:0;display:flex;align-items:center;color:#ccc;font-size:1.4rem;padding:0 0.2rem;">→</div>
-        <div style="flex:1;min-width:180px;background:#F0FAF4;border:1px solid #A5D6A7;border-radius:14px;padding:1.2rem;text-align:center;">
+        <div style="flex:1;min-width:180px;background:#EEF1F5;border:1px solid #B0C4D8;border-radius:14px;padding:1.2rem;text-align:center;">
             <div style="font-size:1.6rem;margin-bottom:0.4rem;">🔔</div>
-            <div style="font-weight:700;color:#1B5E20;margin-bottom:0.3rem;">4. Monitor Agent</div>
-            <div style="color:#2E7D32;font-size:0.85rem;">Runs every January on AWS EventBridge. Re-checks your saved profile when FPL guidelines update. Notifies you only if something changed.</div>
+            <div style="font-weight:700;color:#1B3A5C;margin-bottom:0.3rem;">4. Monitor Agent</div>
+            <div style="color:#2A5480;font-size:0.85rem;">Runs every January on AWS EventBridge. Re-checks your saved profile when FPL guidelines update. Notifies you only if something changed.</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -449,7 +450,12 @@ def show_intake():
     render_pipeline("intake")
 
     st.markdown("#### Tell us about your household")
-    st.caption("Answer a few questions and we'll check your eligibility across 8 benefit programs.")
+
+    # Progress indicator — count non-greeting assistant messages as answered questions
+    answered = max(0, sum(1 for m in st.session_state.messages if m["role"] == "user"))
+    total_questions = 10
+    pct = min(answered / total_questions, 1.0)
+    st.progress(pct, text=f"Question {min(answered + 1, total_questions)} of {total_questions}")
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -617,7 +623,7 @@ def _render_whatif_comparison(original: dict, modified: dict):
                 amt = (prog.get("estimated_benefit") or {}).get("monthly")
                 amt_str = f" — ${amt:,.0f}/mo" if amt else ""
                 st.markdown(f"""
-                <div class="benefit-card" style="border-left:4px solid #2D7A4F;">
+                <div class="benefit-card" style="border-left:4px solid #F4A42A;">
                     <span class="eligible-badge">NOW ELIGIBLE</span>
                     <h4>{name}{amt_str}</h4>
                 </div>
@@ -626,7 +632,7 @@ def _render_whatif_comparison(original: dict, modified: dict):
             for name, orig_amt, mod_amt in changed_amount:
                 delta = mod_amt - orig_amt
                 sign = "+" if delta > 0 else ""
-                color = "#2D7A4F" if delta > 0 else "#C0392B"
+                color = "#1B3A5C" if delta > 0 else "#C0392B"
                 st.markdown(f"""
                 <div class="benefit-card" style="border-left:4px solid {color};">
                     <span class="eligible-badge">AMOUNT CHANGED</span>
@@ -665,8 +671,8 @@ def _show_notification_preference():
     if st.session_state.notification_saved:
         channel = st.session_state.get("notification_value", "")
         st.markdown(f"""
-        <div style="background:#F1F8E9;border:1px solid #C5E1A5;border-radius:8px;
-                    padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:#33691E;">
+        <div style="background:#EEF1F5;border:1px solid #B0C4D8;border-radius:8px;
+                    padding:0.6rem 1rem;margin-bottom:1rem;font-size:0.85rem;color:#1B3A5C;">
             ✅ Notification preference saved — we'll alert <strong>{channel}</strong> if your eligibility changes.
         </div>
         """, unsafe_allow_html=True)
@@ -757,11 +763,11 @@ def show_results():
         """, unsafe_allow_html=True)
 
         st.markdown("""
-        <div style="background:#E8F5E9;border:1px solid #A5D6A7;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.8rem;">
+        <div style="background:#EEF1F5;border:1px solid #B0C4D8;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.8rem;">
             <div style="font-size:1.4rem;">🔔</div>
             <div>
-                <div style="font-weight:700;color:#1B5E20;font-size:0.95rem;">Your profile is saved — AidRadar is watching</div>
-                <div style="color:#2E7D32;font-size:0.85rem;margin-top:0.2rem;">
+                <div style="font-weight:700;color:#1B3A5C;font-size:0.95rem;">Your profile is saved — AidRadar is watching</div>
+                <div style="color:#2A5480;font-size:0.85rem;margin-top:0.2rem;">
                     Every January, federal poverty guidelines update. If your eligibility changes,
                     the Monitor Agent will catch it automatically — no forms to re-fill.
                 </div>
@@ -783,6 +789,7 @@ def show_results():
                 monthly = prog.get("estimated_monthly_benefit")
                 url = prog.get("apply_url", "")
                 cascading = prog.get("cascading_benefits", [])
+                cliff_detected = prog.get("cliff_detected", False)
 
                 amount_html = f'<div class="amount">${monthly:,.2f}/mo</div>' if monthly else '<div class="amount">Coverage (no $ estimate)</div>'
                 cascade_html = ""
@@ -790,10 +797,10 @@ def show_results():
                     cascade_names = ", ".join(c.replace("_", " ").title() for c in cascading)
                     cascade_html = f'<div style="margin-top:0.5rem;font-size:0.8rem;color:#F57F17;">&#x1F517; Unlocks: {cascade_names}</div>'
 
-                apply_html = f'<div style="margin-top:0.5rem;"><a href="{url}" target="_blank" style="color:#2D7A4F;font-weight:600;">Apply here &rarr;</a></div>' if url else ""
+                apply_html = f'<div style="margin-top:0.5rem;"><a href="{url}" target="_blank" style="color:#1B3A5C;font-weight:600;">Apply here &rarr;</a></div>' if url else ""
 
                 st.markdown(f"""
-                <div class="benefit-card">
+                <div class="benefit-card" style="border-left:4px solid #F4A42A;">
                     <span class="eligible-badge">ELIGIBLE</span>
                     <h4>{name}</h4>
                     {amount_html}
@@ -801,6 +808,13 @@ def show_results():
                     {cascade_html}
                 </div>
                 """, unsafe_allow_html=True)
+
+                if cliff_detected:
+                    st.warning(
+                        f"⚠️ **Benefit cliff detected for {name}:** earning $500/month more could make you ineligible. "
+                        "Consider timing income increases carefully.",
+                        icon=None,
+                    )
 
         # Ineligible programs
         ineligible = eligibility_data.get("ineligible_programs", [])
@@ -810,7 +824,7 @@ def show_results():
                 name = prog.get("display_name") or prog.get("program_name") or prog.get("program_id", "").replace("_", " ").upper()
                 reason = prog.get("reason", "")
                 st.markdown(f"""
-                <div class="benefit-card">
+                <div class="benefit-card" style="border-left:4px solid #CCCCCC;">
                     <span class="ineligible-badge">NOT ELIGIBLE</span>
                     <h4>{name}</h4>
                     <div style="color:#666;font-size:0.9rem;">{reason}</div>
