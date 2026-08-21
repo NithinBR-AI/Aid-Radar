@@ -73,3 +73,48 @@ def test_account_number_scrubbed():
     p = {**VALID, "notes": "Account 123456789012"}
     result = validate_profile(p)
     assert "123456789012" not in str(result)
+
+
+def test_citizenship_daca_normalizes_to_qualified_immigrant():
+    # DACA holders are not in the normalization map — should fall to qualified_immigrant,
+    # NOT us_citizen, to avoid falsely granting full citizen program eligibility.
+    p = {**VALID, "citizenship_status": "daca"}
+    result = validate_profile(p)
+    assert result["citizenship_status"] == "qualified_immigrant"
+
+
+def test_citizenship_refugee_normalizes_to_qualified_immigrant():
+    p = {**VALID, "citizenship_status": "refugee"}
+    result = validate_profile(p)
+    assert result["citizenship_status"] == "qualified_immigrant"
+
+
+def test_citizenship_unrecognized_string_defaults_to_qualified_immigrant():
+    p = {**VALID, "citizenship_status": "some unexpected string"}
+    result = validate_profile(p)
+    assert result["citizenship_status"] == "qualified_immigrant"
+
+
+def test_citizenship_us_citizen_canonical():
+    p = {**VALID, "citizenship_status": "US citizen"}
+    result = validate_profile(p)
+    assert result["citizenship_status"] == "us_citizen"
+
+
+def test_citizenship_green_card_normalizes():
+    p = {**VALID, "citizenship_status": "green card"}
+    result = validate_profile(p)
+    assert result["citizenship_status"] == "permanent_resident"
+
+
+def test_out_of_state_sets_fallback_flags():
+    p = {**VALID, "state": "WA"}
+    result = validate_profile(p)
+    assert result["state_is_fallback"] is True
+    assert result["state_original"] == "WA"
+    assert result["state"] == "CA"
+
+
+def test_supported_state_no_fallback_flag():
+    result = validate_profile(VALID)
+    assert result.get("state_is_fallback") is not True

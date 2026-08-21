@@ -52,8 +52,9 @@ PROFILES = [
             "has_pregnant_member": False,
             "citizenship_status": "us_citizen",
         },
-        "expect_eligible": ["medicaid", "liheap", "lifeline"],
-        "expect_ineligible": ["wic", "free_school_meals"],
+        # SSI now correctly triggers: is_ssi_disabled=True + age 68 (65+) + low income
+        "expect_eligible": ["snap", "medicaid", "ssi", "liheap", "lifeline"],
+        "expect_ineligible": ["wic", "tanf"],
     },
     {
         "id": "ny_higher_income_single",

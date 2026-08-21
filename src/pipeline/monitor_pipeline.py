@@ -6,11 +6,15 @@ Decoupled from Streamlit. Called by app.py (UI wrapper) and monitor_runner.py (c
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
+from datetime import datetime, timezone, timedelta
 
 from src.agents import create_monitor_agent
 from src.db.profile_store import get_profile, update_snapshot
 from src.pipeline.runner import build_eligibility_profile
+
+_MONITOR_AGENT_TIMEOUT_SECONDS = 120
 from src.tools.eligibility_checker import eligibility_checker
 
 logger = logging.getLogger(__name__)
@@ -52,8 +56,8 @@ def _diff_snapshots(previous: dict, current: dict) -> tuple[list, list, list]:
         elif prev_elig and not curr_elig:
             lost.append(name)
         elif prev_elig and curr_elig:
-            prev_amt = (prev.get("estimated_benefit") or {}).get("monthly", 0) or 0
-            curr_amt = (curr.get("estimated_benefit") or {}).get("monthly", 0) or 0
+            prev_amt = float((prev.get("estimated_benefit") or {}).get("monthly", 0) or 0)
+            curr_amt = float((curr.get("estimated_benefit") or {}).get("monthly", 0) or 0)
             if abs(curr_amt - prev_amt) > _BENEFIT_CHANGE_THRESHOLD:
                 changed.append((name, prev_amt, curr_amt))
 
@@ -136,7 +140,10 @@ def run_monitor_check(
     # state and snapshot date so it can call check_policy_change with correct context.
     changed_str = [f"{n}: ${p:,.0f}/mo → ${c:,.0f}/mo" for n, p, c in changed]
     state = intake_profile.get("state", "unknown").upper()
-    snapshot_date = (saved or {}).get("updated_at", "2024-01-01")[:10]  # ISO date only
+    # Fall back to 90 days ago rather than a hardcoded 2024 date — avoids flooding
+    # check_policy_change with 2+ years of policy history on first run.
+    _ninety_days_ago = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+    snapshot_date = (saved or {}).get("updated_at", _ninety_days_ago)[:10]  # ISO date only
 
     history_instruction = (
         f"Call get_profile_history(profile_id='{profile_id}') to check for trends, "
@@ -157,7 +164,13 @@ def run_monitor_check(
     )
 
     agent = create_monitor_agent()
-    agent_output = str(agent(prompt))
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(agent, prompt)
+            agent_output = str(future.result(timeout=_MONITOR_AGENT_TIMEOUT_SECONDS))
+    except FuturesTimeoutError:
+        logger.error("monitor_check agent_timeout exceeded=%ds profile_id=%s", _MONITOR_AGENT_TIMEOUT_SECONDS, profile_id)
+        agent_output = "Eligibility changes were detected but the notification could not be generated — will retry on the next scheduled check."
 
     return MonitorResult(
         original_income=orig_income,

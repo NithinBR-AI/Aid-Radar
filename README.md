@@ -64,7 +64,16 @@ The pipeline calls PolicyEngine directly first — deterministic, no LLM involve
 - **PolicyEngine** (pipeline, not agent) — Runs the household profile through [PolicyEngine](https://policyengine.org), an open-source tax and benefit microsimulation engine. Returns eligibility and estimated monthly benefit for all 8 programs in a single deterministic call.
 - **`application_finder`** (agent tool) — Looks up state-specific application URLs, required documents, and deadlines from a curated JSON dataset.
 
-Before PolicyEngine runs, `validate_profile` scrubs PII patterns (account numbers), normalizes state names ("California" → "CA"), bounds-checks income (≤ $500k/yr), and enforces household structure rules. If validation fails, the error surfaces to the user rather than producing a wrong answer silently.
+Before PolicyEngine runs, `validate_profile` scrubs PII patterns (account numbers), normalizes state names ("California" → "CA"), bounds-checks income (≤ $500k/yr), and enforces household structure rules:
+
+- **Adults=0 guard** — if all collected members are children (household size equals child count), the validator raises an error and the intake prompt catches this conversationally before it reaches the pipeline.
+- **Elderly headcount check** — the intake now collects `elderly_count` (how many people in the household are 65+, not just yes/no). If `elderly_count > 0` and none of the listed adults are 65+, the validator checks that household size accounts for all elderly members. Fails with a user-friendly message if not.
+- **Out-of-state fallback** — if the user's state is not in the supported set (CA, TX, NY, FL), validation falls back to `CA` federal thresholds rather than hard-failing. The original state is preserved in `state_original` and surfaced as a banner in the results UI, keeping the intake prompt's promise of "we'll use federal thresholds."
+- **Citizenship normalization** — free-text LLM output ("US citizen", "green card", "unauthorized") is mapped to canonical values (`us_citizen`, `permanent_resident`, `qualified_immigrant`, `undocumented`). Unrecognized values (DACA, refugee, TPS) default to `qualified_immigrant` — the broadest eligible non-citizen category — rather than `us_citizen`, avoiding false eligibility grants.
+- **Child age clamping** — children from the `under_5` bucket are clamped to ages 0–4 and `K-12` children to 5–18, catching any intake agent misclassification before PolicyEngine sees the profile.
+- **Flag wiring** — `has_disabled_member`, `has_pregnant_member`, and `elderly_count` are validated and passed through to PolicyEngine. `is_ssi_disabled` (required for SSI — `is_disabled` alone is not sufficient in PolicyEngine) is set alongside `is_disabled`. `is_pregnant` is set on the appropriate adult with an age guard (12–55). If `elderly_count > 0` but fewer than that many adults are 65+, the exact number of missing elderly members are injected as synthetic 70-year-olds — giving PolicyEngine the correct household size for FPL threshold calculation, not just a single placeholder.
+
+If validation fails, the error surfaces to the user with a "Go Back and Correct" prompt rather than producing a wrong answer silently.
 
 ### 3. Recommendation Agent
 Receives the structured eligibility output and renders the final report. Has one tool: `estimate_cliff_effect`. For eligible programs with a meaningful benefit (≥ $50/month), the agent decides whether to run a cliff analysis — calling PolicyEngine at income + $500 to check whether a small raise would eliminate the benefit. The agent makes this call per-program based on the household's income and benefit size.
@@ -180,7 +189,7 @@ aid-radar/
 
 AidRadar has three testing layers: unit tests, integration tests, and evals. Each layer serves a different purpose.
 
-### Unit Tests — 87 tests, no external dependencies
+### Unit Tests — 95 tests, no external dependencies
 
 All unit tests mock LLM calls, DynamoDB, and PolicyEngine. They run offline in under 10 seconds.
 
@@ -190,9 +199,9 @@ pytest tests/unit/ -v
 
 | File | What it covers | Tests |
 |------|---------------|-------|
-| `test_profile_validator.py` | Valid profiles pass, invalid profiles raise typed errors | 11 |
-| `test_profile_validator_extended.py` | Edge cases: non-list adults/children, household > 20, income bounds, PII scrubbing, state name normalization | 12 |
-| `test_eligibility_checker.py` | Tool return shape, program keys, error paths, validation integration | 9 |
+| `test_profile_validator.py` | Valid profiles pass, invalid profiles raise typed errors, out-of-state fallback | 11 |
+| `test_profile_validator_extended.py` | Edge cases: non-list adults/children, household > 20, income bounds, PII scrubbing, state name normalization, citizenship normalization (DACA, refugee, green card), out-of-state fallback flags | 20 |
+| `test_eligibility_checker.py` | Tool return shape, program keys, error paths, validation integration, out-of-state returns success | 10 |
 | `test_application_finder.py` | URL lookup, document list shape, unknown state/program handling | 6 |
 | `test_pipeline_runner.py` | Pipeline orchestration: eligibility failure, timeout error, rec prompt includes eligibility_profile JSON, What If path, profile conversion | 13 |
 | `test_monitor_pipeline.py` | `_diff_snapshots()`: gained, lost, changed, no-change, small-change threshold, missing programs | 8 |
@@ -343,7 +352,7 @@ Models tested on Mantle:
 - Monitor Agent with real PolicyEngine diff
 - What If simulator for income/household exploration
 - Mock notification preference UI (email/SMS) with session state storage
-- 57 unit tests + 12 integration tests + 5-profile eval suite
+- 95 unit tests + 12 integration tests + 5-profile eval suite
 
 ### Stage 2 — Pilot Product
 - React/Next.js frontend — mobile-first, accessible on low-end devices and slow connections (the population most likely to need these benefits)

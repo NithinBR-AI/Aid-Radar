@@ -20,6 +20,7 @@ from dataclasses import dataclass, field
 from src.agents import create_eligibility_agent, create_recommendation_agent
 from src.db.profile_store import save_profile
 from src.tools.eligibility_checker import eligibility_checker
+from src.guardrails.profile_validator import ProfileValidationError, validate_profile
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +52,8 @@ class PipelineResult:
     programs: dict = field(default_factory=dict)
     profile_id: str | None = None
     error: str | None = None
+    state_is_fallback: bool = False
+    state_original: str | None = None
 
     @property
     def success(self) -> bool:
@@ -135,9 +138,13 @@ def build_eligibility_profile(intake_profile: dict) -> dict:
 
     children = []
     for child in intake_profile.get("children_under_5", []) or []:
-        children.append({"age": child.get("age", 3)})
+        age = child.get("age", 3)
+        # Clamp to valid range for under-5 bucket — catches intake agent classification errors
+        children.append({"age": min(int(age), 4)})
     for child in intake_profile.get("children_k12", []) or []:
-        children.append({"age": child.get("age", 10)})
+        age = child.get("age", 10)
+        # Clamp to valid range for K-12 bucket
+        children.append({"age": max(5, min(int(age), 18))})
     # Also handle pre-structured children list (direct API / integration path)
     if not children and intake_profile.get("children") and isinstance(intake_profile["children"], list):
         children = [{"age": c.get("age", 5)} for c in intake_profile["children"]]
@@ -148,6 +155,11 @@ def build_eligibility_profile(intake_profile: dict) -> dict:
         for _ in range(household_size - accounted_for):
             adults.append({"age": 30, "income": 0})
 
+    # Safety net: children >= household_size leaves 0 adults — PolicyEngine requires at least 1.
+    # The intake prompt flags this conversationally; this guard catches any case that slips through.
+    if len(adults) == 0:
+        adults.append({"age": 30, "income": monthly_income * 12})
+
     return {
         "state": intake_profile.get("state", "CA"),
         "monthly_income": monthly_income,
@@ -155,6 +167,7 @@ def build_eligibility_profile(intake_profile: dict) -> dict:
         "children": children,
         "has_disabled_member": intake_profile.get("has_disabled_member", False),
         "has_pregnant_member": intake_profile.get("has_pregnant_member", False),
+        "elderly_count": intake_profile.get("elderly_count", 1 if intake_profile.get("has_elderly_65_plus", False) else 0),
         "has_elderly_65_plus": intake_profile.get("has_elderly_65_plus", False),
         "current_programs": intake_profile.get("current_programs", []),
         "veteran_in_household": intake_profile.get("veteran_in_household", False),
@@ -172,7 +185,26 @@ def run_pipeline(intake_profile: dict) -> PipelineResult:
     application_finder to enrich with URLs and documents.
     This means programs is always authoritative, never parsed from free text.
     """
-    eligibility_profile = build_eligibility_profile(intake_profile)
+    try:
+        eligibility_profile = build_eligibility_profile(intake_profile)
+    except (ValueError, ProfileValidationError) as e:
+        return PipelineResult(
+            eligibility_text="",
+            report_text="",
+            error=f"validation_error:{e}",
+        )
+
+    # Check if state was out-of-supported-area and fell back to federal thresholds.
+    # validate_profile is idempotent — this second call is cheap and lets us surface
+    # the fallback flag to the UI without threading it through build_eligibility_profile.
+    state_is_fallback = False
+    state_original = None
+    try:
+        _validated = validate_profile(eligibility_profile)
+        state_is_fallback = _validated.get("state_is_fallback", False)
+        state_original = _validated.get("state_original")
+    except ProfileValidationError:
+        pass
 
     # Step 1: PolicyEngine — direct call, authoritative result
     programs: dict = {}
@@ -254,6 +286,8 @@ def run_pipeline(intake_profile: dict) -> PipelineResult:
         report_text=report_text,
         programs=programs,
         profile_id=profile_id,
+        state_is_fallback=state_is_fallback,
+        state_original=state_original,
     )
 
 

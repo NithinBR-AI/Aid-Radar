@@ -55,7 +55,11 @@ def estimate_cliff_effect(
             "content": [{"text": "eligibility_profile must be a valid JSON string"}],
         }
 
-    # Build the +$500 scenario — deep copy to avoid mutating the original profile
+    # Build the +$500 scenario — deep copy to avoid mutating the original profile.
+    # Known simplification: the $500 increase is attributed entirely to adult[0].
+    # In multi-income households this differs from a real raise scenario (e.g. a
+    # part-time job affecting adult[1]), but the cliff tool is an exploration aid,
+    # not a financial projection. The What If simulator has the same documented limit.
     projected_profile = copy.deepcopy(profile)
     projected_income = current_monthly_income + 500
     projected_profile["monthly_income"] = projected_income

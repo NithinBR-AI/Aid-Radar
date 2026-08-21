@@ -2,12 +2,10 @@
 Eligibility Agent — interprets pre-computed PolicyEngine results.
 
 The pipeline calls eligibility_checker directly and passes the structured results
-in the prompt. This agent has NO tools — it interprets the results, identifies
-cascading eligibility chains, and builds a structured summary for the
-Recommendation Agent.
-
-application_finder has moved to the Recommendation Agent, which owns the
-"how to apply" step and calls it directly for each eligible program.
+in the prompt. This agent has one tool — application_finder — which it calls
+for each eligible program to retrieve state-specific URLs and required documents.
+It interprets the results, identifies cascading eligibility chains, and builds a
+structured summary for the Recommendation Agent.
 
 Separating PolicyEngine (deterministic) from interpretation (LLM) means:
 - The programs dict is always authoritative, never parsed from free text

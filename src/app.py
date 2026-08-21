@@ -321,6 +321,10 @@ if "baseline_programs" not in st.session_state:
     st.session_state.baseline_programs = {}
 if "profile_id" not in st.session_state:
     st.session_state.profile_id = None
+if "state_is_fallback" not in st.session_state:
+    st.session_state.state_is_fallback = False
+if "state_original" not in st.session_state:
+    st.session_state.state_original = None
 
 
 # ---------------------------------------------------------------------------
@@ -514,12 +518,25 @@ def show_processing():
         result = run_pipeline(st.session_state.profile)
 
         if not result.success:
+            # Validation errors mean bad intake data — send user back to correct it
+            if result.error and result.error.startswith("validation_error:"):
+                validation_msg = result.error.replace("validation_error:", "")
+                status.update(label="Profile issue detected", state="error", expanded=False)
+                st.warning(f"**We found an issue with your answers:** {validation_msg}")
+                st.info("Please go back and correct your answers so we can check your eligibility accurately.")
+                if st.button("Go Back and Correct", type="primary"):
+                    st.session_state.stage = "intake"
+                    st.session_state.profile = None
+                    st.rerun()
+                return
             raise RuntimeError(result.error)
 
         st.session_state.eligibility_results = result.eligibility_text
         st.session_state.report = result.report_text
         st.session_state.baseline_programs = result.programs
         st.session_state.profile_id = result.profile_id
+        st.session_state.state_is_fallback = result.state_is_fallback
+        st.session_state.state_original = result.state_original
 
         status.update(label="Pipeline complete!", state="complete", expanded=False)
         st.session_state.stage = "results"
@@ -554,23 +571,30 @@ def _show_whatif_section(base_profile: dict, original_programs: dict):
     )
 
     orig_income = base_profile.get("monthly_income", 0)
-    orig_adults = len(base_profile.get("adults", [{"age": 30}]))
-    orig_children = len(base_profile.get("children", []))
+
+    # intake profile uses children_under_5 + children_k12, not a pre-built children list
+    _under5 = base_profile.get("children_under_5") or []
+    _k12 = base_profile.get("children_k12") or []
+    _children_list = base_profile.get("children") or []
+    orig_children = len(_under5) + len(_k12) if (_under5 or _k12) else len(_children_list)
+
+    # intake profile may not have a pre-built adults list — infer from household_size and children
+    _adults_list = base_profile.get("adults") or []
+    if _adults_list:
+        orig_adults = len(_adults_list)
+    else:
+        orig_adults = max(1, base_profile.get("household_size", 1) - orig_children)
 
     col1, col2, col3 = st.columns(3)
     with col1:
-        wi_income = st.slider(
-            f"Monthly Income ($) — current: ${int(orig_income):,}",
-            min_value=0,
-            max_value=10000,
-            value=int(orig_income),
-            step=100,
-            key="wi_income",
-        )
+        wi_income = st.slider("Monthly Income ($/mo)", min_value=0, max_value=10000, value=int(orig_income), step=100, key="wi_income")
+        st.caption(f"Current: ${int(orig_income):,}/mo")
     with col2:
-        wi_adults = st.slider(f"Number of Adults — current: {orig_adults}", 1, 4, orig_adults, key="wi_adults")
+        wi_adults = st.slider("Number of Adults", 1, 4, orig_adults, key="wi_adults")
+        st.caption(f"Current: {orig_adults}")
     with col3:
-        wi_children = st.slider(f"Number of Children — current: {orig_children}", 0, 6, orig_children, key="wi_children")
+        wi_children = st.slider("Number of Children", 0, 6, orig_children, key="wi_children")
+        st.caption(f"Current: {orig_children}")
 
     changed = (wi_income != int(orig_income)) or (wi_adults != orig_adults) or (wi_children != orig_children)
 
@@ -731,6 +755,15 @@ def _parse_eligibility_json(text: str) -> dict | None:
 def show_results():
     render_pipeline("recommendation")
 
+    # Surface out-of-area fallback so the intake promise is kept end-to-end
+    if st.session_state.get("state_is_fallback"):
+        state_orig = st.session_state.get("state_original") or "your state"
+        st.info(
+            f"**Note:** AidRadar currently covers California, Texas, New York, and Florida. "
+            f"Since you're in **{state_orig}**, your results are based on federal program "
+            f"thresholds — state-specific benefit amounts may vary when you apply."
+        )
+
     eligibility_data = _parse_eligibility_json(st.session_state.eligibility_results or "")
 
     if not eligibility_data:
@@ -876,7 +909,37 @@ def show_results():
             st.rerun()
     with col2:
         if st.button("View Household Profile", use_container_width=True):
-            st.json(st.session_state.profile)
+            p = st.session_state.profile or {}
+            under5 = p.get("children_under_5") or []
+            k12 = p.get("children_k12") or []
+            total_children = len(under5) + len(k12)
+            elderly = p.get("elderly_count", 1 if p.get("has_elderly_65_plus") else 0)
+            state_display = p.get("state_original") or p.get("state", "—")
+            income_note = " (approximate)" if p.get("income_is_approximate") else ""
+            citizenship_map = {
+                "us_citizen": "US Citizen",
+                "permanent_resident": "Permanent Resident",
+                "qualified_immigrant": "Qualified Immigrant",
+                "undocumented": "Undocumented",
+            }
+            citizenship = citizenship_map.get(p.get("citizenship_status", ""), p.get("citizenship_status", "—"))
+            current_programs = p.get("current_programs") or []
+
+            st.markdown("**Your Household Profile**")
+            st.markdown(f"""
+- **State:** {state_display}
+- **Household size:** {p.get("household_size", "—")}
+- **Monthly income:** ${int(p.get("monthly_income", 0)):,}{income_note}
+- **Applicant age:** {p.get("applicant_age", "—")}
+- **Children under 5:** {len(under5)} {"— ages: " + ", ".join(str(c.get("age","?")) for c in under5) if under5 else ""}
+- **Children in K–12:** {len(k12)} {"— ages: " + ", ".join(str(c.get("age","?")) for c in k12) if k12 else ""}
+- **Adults 65 or older:** {elderly if elderly else "None"}
+- **Disability in household:** {"Yes" if p.get("has_disabled_member") else "No"}
+- **Pregnant member:** {"Yes" if p.get("has_pregnant_member") else "No"}
+- **Veteran in household:** {"Yes" if p.get("veteran_in_household") else "No"}
+- **Citizenship status:** {citizenship}
+- **Currently enrolled in:** {", ".join(current_programs) if current_programs else "None"}
+""")
 
 
 # ---------------------------------------------------------------------------

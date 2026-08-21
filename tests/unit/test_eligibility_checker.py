@@ -18,9 +18,17 @@ def test_invalid_json_returns_error():
 
 
 def test_invalid_profile_returns_error():
-    bad = json.dumps({"state": "OH", "monthly_income": 2000, "adults": [{"age": 30, "income": 0}], "children": []})
+    # Truly invalid profile (missing state) — should return error
+    bad = json.dumps({"monthly_income": 2000, "adults": [{"age": 30, "income": 0}], "children": []})
     result = eligibility_checker(bad)
     assert result["status"] == "error"
+
+
+def test_out_of_state_returns_success_with_fallback():
+    # OH is not a supported state but now falls back to federal thresholds (CA) — not an error
+    oh = json.dumps({"state": "OH", "monthly_income": 2000, "adults": [{"age": 30, "income": 0}], "children": []})
+    result = eligibility_checker(oh)
+    assert result["status"] == "success"
 
 
 def test_validate_profile_called_before_simulation():

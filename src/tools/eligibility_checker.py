@@ -13,9 +13,13 @@ Usage by agents:
 - Monitor Agent calls this when re-evaluating saved profiles
 """
 
+import logging
+
 from policyengine_us import Simulation
 
 from strands import tool
+
+logger = logging.getLogger(__name__)
 from src.guardrails.profile_validator import validate_profile, ProfileValidationError
 
 PROGRAM_VARIABLES = {
@@ -97,12 +101,69 @@ def _build_situation(profile: dict) -> dict:
     if not adults:
         adults = [{"age": profile.get("applicant_age", 30), "income": profile.get("monthly_income", 0) * 12}]
 
+    has_disabled = profile.get("has_disabled_member", False)
+    has_pregnant = profile.get("has_pregnant_member", False)
+    elderly_count = profile.get("elderly_count", 1 if profile.get("has_elderly_65_plus", False) else 0)
+    has_elderly = elderly_count > 0
+
     for i, adult in enumerate(adults):
         name = f"adult_{i}"
         member_names.append(name)
-        people[name] = {
+        person = {
             "age": {year: adult.get("age", 30)},
             "employment_income": {year: adult.get("income", 0)},
+        }
+        # Apply flags to adult_0 (primary applicant) if no adult already satisfies them.
+        # For elderly: if flag is set but no adult is 65+, inject age 70 for adult_0.
+        # For disabled/pregnant: set on adult_0 since we don't know which member.
+        if i == 0:
+            if has_disabled:
+                # is_disabled affects Medicaid; is_ssi_disabled is required for SSI eligibility
+                person["is_disabled"] = {year: True}
+                person["is_ssi_disabled"] = {year: True}
+            # Only set pregnancy on adult_0 if they are in a plausible reproductive age range.
+            # If adult_0 is outside that range and another adult exists, set on adult_1.
+            # Teen pregnancy (child node) is an out-of-scope edge case.
+            if has_pregnant:
+                applicant_age_val = adult.get("age", 30)
+                if 12 <= applicant_age_val <= 55:
+                    person["is_pregnant"] = {year: True}
+        people[name] = person
+
+    # If has_pregnant but adult_0 was outside reproductive age range, set on next available adult
+    if has_pregnant:
+        pregnant_set = any(p.get("is_pregnant", {}).get(year) for p in people.values())
+        if not pregnant_set:
+            fallback_set = False
+            for name in member_names:
+                if name.startswith("adult_") and name != "adult_0":
+                    people[name]["is_pregnant"] = {year: True}
+                    fallback_set = True
+                    break
+            if not fallback_set:
+                # Single-adult household where adult_0 is outside reproductive age range.
+                # Flag is dropped — WIC/Medicaid pregnancy benefits won't trigger.
+                # This edge case (e.g. 70-year-old sole adult claiming pregnancy) is
+                # likely a data error; log it rather than silently ignoring.
+                logger.warning(
+                    "_build_situation: has_pregnant_member=True but no eligible adult found "
+                    "(adult_0 age=%s, total adults=%d) — is_pregnant not set on any member",
+                    adults[0].get("age", "?") if adults else "?",
+                    len(adults),
+                )
+
+    # If elderly members exist but no listed adult is 65+, inject synthetic 70-year-old members
+    # so PolicyEngine models age-based eligibility (SSI, Medicaid) correctly.
+    # Inject exactly elderly_count members — accurate household size for FPL threshold calculation.
+    adults_list = profile.get("adults", [])
+    existing_65_plus = sum(1 for a in adults_list if a.get("age", 0) >= 65)
+    to_inject = max(0, elderly_count - existing_65_plus)
+    for _ in range(to_inject):
+        name = f"adult_{len(people)}"
+        member_names.append(name)
+        people[name] = {
+            "age": {year: 70},
+            "employment_income": {year: 0},
         }
 
     children = profile.get("children", [])
@@ -136,6 +197,13 @@ def _check_liheap(profile: dict) -> dict:
     threshold = LIHEAP_FPL_THRESHOLD.get(state, LIHEAP_DEFAULT_THRESHOLD)
 
     household_size = len(profile.get("adults", [{}])) + len(profile.get("children", []))
+    # Account for synthetic elderly members injected in _build_situation so LIHEAP FPL
+    # threshold uses the same household size PolicyEngine sees.
+    elderly_count = profile.get("elderly_count", 1 if profile.get("has_elderly_65_plus", False) else 0)
+    adults_list = profile.get("adults", [])
+    existing_65_plus = sum(1 for a in adults_list if a.get("age", 0) >= 65)
+    to_inject = max(0, elderly_count - existing_65_plus)
+    household_size += to_inject
     if household_size < 1:
         household_size = 1
 

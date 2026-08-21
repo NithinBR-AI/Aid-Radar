@@ -25,10 +25,14 @@ def test_state_normalized_full_name():
     assert validate_profile(p)["state"] == "CA"
 
 
-def test_unsupported_state_raises():
+def test_unsupported_state_falls_back_to_federal():
+    # Out-of-area states no longer raise — they fall back to federal thresholds
+    # so the intake prompt's promise ("we'll use federal thresholds") is kept.
     p = {**VALID, "state": "OH"}
-    with pytest.raises(ProfileValidationError, match="not supported"):
-        validate_profile(p)
+    result = validate_profile(p)
+    assert result["state"] == "CA"  # FEDERAL_FALLBACK_STATE
+    assert result["state_is_fallback"] is True
+    assert result["state_original"] == "OH"
 
 
 def test_missing_state_raises():
