@@ -1,0 +1,64 @@
+name: Deploy to AgentCore
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: aid-radar
+  IMAGE_TAG: latest
+  AGENTCORE_RUNTIME_NAME: aid-radar-runtime
+  AGENTCORE_ROLE_ARN: arn:aws:iam::156187162502:role/AidRadarAgentCoreRole
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+      - name: Deploy to AgentCore Runtime
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+          EXISTING=$(aws bedrock-agentcore create-agent-runtime \
+            --agent-runtime-name $AGENTCORE_RUNTIME_NAME \
+            --agent-runtime-artifact "{\"containerConfiguration\":{\"containerUri\":\"$IMAGE_URI\"}}" \
+            --role-arn $AGENTCORE_ROLE_ARN \
+            --network-configuration "{\"networkMode\":\"PUBLIC\"}" \
+            --region $AWS_REGION 2>&1 || true)
+
+          if echo "$EXISTING" | grep -q "already exists"; then
+            echo "Runtime exists — updating..."
+            aws bedrock-agentcore update-agent-runtime \
+              --agent-runtime-name $AGENTCORE_RUNTIME_NAME \
+              --agent-runtime-artifact "{\"containerConfiguration\":{\"containerUri\":\"$IMAGE_URI\"}}" \
+              --role-arn $AGENTCORE_ROLE_ARN \
+              --region $AWS_REGION
+          fi
+
+          echo "Deployment complete: $IMAGE_URI"
