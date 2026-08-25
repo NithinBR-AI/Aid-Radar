@@ -414,6 +414,17 @@
 
         <div class="flow-arrow">↓</div>
 
+        <div class="agent-card" style="border-left:3px solid var(--green);">
+          <div class="agent-icon elig">⚖️</div>
+          <div class="agent-info">
+            <div class="agent-name">PolicyEngine US</div>
+            <div class="agent-desc">Direct function call — no LLM<br>Deterministic benefit simulation · 80+ programs</div>
+          </div>
+          <div class="agent-tag tag-llm" style="background:var(--green-light);color:var(--green);">direct call</div>
+        </div>
+
+        <div class="flow-arrow">↓</div>
+
         <div class="agent-card">
           <div class="agent-icon elig">✅</div>
           <div class="agent-info">
@@ -434,17 +445,6 @@
           <div class="agent-tag tag-tool">1 tool</div>
         </div>
 
-        <div class="flow-arrow">↓ <span style="font-size:0.65rem;color:var(--text-muted);font-family:var(--font-mono);">scheduled</span></div>
-
-        <div class="agent-card">
-          <div class="agent-icon mon">🔔</div>
-          <div class="agent-info">
-            <div class="agent-name">Monitor Agent</div>
-            <div class="agent-desc">Re-checks eligibility on FPL<br>threshold changes · notifies user</div>
-          </div>
-          <div class="agent-tag tag-tool">2 tools</div>
-        </div>
-
         <div class="bedrock-row">
           <div class="bedrock-icon">⚡</div>
           <div class="bedrock-info">
@@ -456,7 +456,8 @@
 
       <div class="eventbridge-row">
         <div class="eb-icon">⏰</div>
-        <div class="eb-text"><strong>AWS EventBridge</strong> — scheduled cron trigger for Monitor Agent</div>
+        <div class="eb-text"><strong>AWS EventBridge</strong> — scheduled cron trigger →
+          <strong>Monitor Agent</strong> (2 tools: get_profile_history, check_policy_change) · re-checks eligibility · notifies on real changes only</div>
       </div>
     </div>
   </div>
@@ -469,7 +470,7 @@
       <div class="tool-emoji">⚖️</div>
       <div class="tool-info">
         <div class="tool-name">PolicyEngine</div>
-        <div class="tool-desc">8 programs · SNAP, Medicaid, WIC,<br>TANF, SSI, Lifeline, LIHEAP, FSM</div>
+        <div class="tool-desc">80+ programs · SNAP, Medicaid, WIC,<br>EITC, SSI, ACA, CHIP, LIHEAP + more</div>
       </div>
     </div>
 
