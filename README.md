@@ -124,10 +124,11 @@ States: **California, Texas, New York, Florida** — covering ~100 million peopl
 | Layer | Technology |
 |-------|-----------|
 | Agent framework | [Strands Agents SDK](https://github.com/strands-agents) (Python) |
-| LLM | DeepSeek V3.2 via Amazon Bedrock Mantle (OpenAI-compatible endpoint) |
+| LLM (primary) | DeepSeek V3.2 via Amazon Bedrock Mantle (OpenAI-compatible endpoint) |
+| LLM (fallback chain) | Amazon Nova Lite → xAI Grok 4.3 — automatic failover on 502/503 after retries |
 | Eligibility engine | [PolicyEngine](https://policyengine.org) — open-source microsimulation |
 | Frontend | Streamlit (hero, chat intake, results dashboard, What If simulator) |
-| Storage | Amazon DynamoDB — household profiles + eligibility snapshots, 90-day TTL |
+| Storage | Amazon DynamoDB — household profiles + eligibility snapshots, 90-day TTL; table auto-created on first run if it doesn't exist |
 | Scheduling | AWS EventBridge — triggers Monitor Agent on a recurring schedule |
 | Validation | Custom guardrails layer (`profile_validator.py`) — PII scrubbing, state normalization, bounds checking |
 | PDF generation | fpdf2 — branded PDF export of the full eligibility report |
@@ -159,6 +160,8 @@ aid-radar/
 │   │   └── policy_change.py        # Policy changelog lookup (rule change vs situation change)
 │   ├── db/
 │   │   └── profile_store.py        # DynamoDB — save/load/update profiles + snapshots
+│   ├── models/
+│   │   └── eligibility_output.py   # Pydantic schema for eligibility agent structured output
 │   ├── guardrails/
 │   │   └── profile_validator.py    # Input validation, state normalization, PII scrubbing
 │   ├── prompts/                    # Agent system prompts (txt files, one per agent)
@@ -166,10 +169,11 @@ aid-radar/
 │       ├── programs/               # Per-program JSON (URLs, documents, state overrides)
 │       └── policy_changelog.json   # Curated log of federal/state rule changes (used by check_policy_change)
 ├── tests/
-│   ├── unit/                       # 57 unit tests — all dependencies mocked
+│   ├── unit/                       # 113 unit tests — all dependencies mocked
 │   │   ├── test_profile_validator.py
 │   │   ├── test_profile_validator_extended.py
 │   │   ├── test_eligibility_checker.py
+│   │   ├── test_eligibility_output.py
 │   │   ├── test_application_finder.py
 │   │   ├── test_pipeline_runner.py
 │   │   ├── test_monitor_pipeline.py
@@ -190,7 +194,7 @@ aid-radar/
 
 AidRadar has three testing layers: unit tests, integration tests, and evals. Each layer serves a different purpose.
 
-### Unit Tests — 112 tests, no external dependencies
+### Unit Tests — 113 tests, no external dependencies
 
 All unit tests mock LLM calls, DynamoDB, and PolicyEngine. They run offline in under 10 seconds.
 
@@ -201,12 +205,12 @@ pytest tests/unit/ -v
 | File | What it covers | Tests |
 |------|---------------|-------|
 | `test_profile_validator.py` | Valid profiles pass, invalid profiles raise typed errors, unsupported state raises | 11 |
-| `test_profile_validator_extended.py` | Edge cases: non-list adults/children, household > 20, income bounds, PII scrubbing, state name normalization, citizenship normalization (DACA, refugee, green card), unsupported state raises | 20 |
+| `test_profile_validator_extended.py` | Edge cases: non-list adults/children, household > 20, income bounds, PII scrubbing, state name normalization, citizenship normalization (DACA, refugee, green card), unsupported state raises | 22 |
 | `test_eligibility_checker.py` | Tool return shape, program keys, error paths, validation integration, out-of-state returns error | 10 |
 | `test_application_finder.py` | URL lookup, document list shape, unknown state/program handling | 6 |
 | `test_pipeline_runner.py` | Pipeline orchestration: eligibility failure, timeout error, rec prompt includes eligibility_profile JSON, What If path, profile conversion | 13 |
 | `test_monitor_pipeline.py` | `_diff_snapshots()`: gained, lost, changed, no-change, small-change threshold, missing programs | 8 |
-| `test_monitor_pipeline_extended.py` | `run_monitor_check()`: eligibility failure → error, gained/lost triggers agent, DynamoDB update, income preservation | 6 |
+| `test_monitor_pipeline_extended.py` | `run_monitor_check()`: eligibility failure → error, gained/lost triggers agent, DynamoDB update, income preservation, invalid state raises | 7 |
 | `test_eligibility_output.py` | `parse_eligibility_output()`: valid fenced/bare JSON, missing fields, extra fields stripped, empty eligible programs, None benefit fields | 8 |
 | `test_cliff_effect.py` | Cliff detection, no-cliff path, projected income calculation, invalid inputs, deep copy safety, unknown program_id | 8 |
 | `test_policy_change.py` | Date filtering, ALL-states wildcard, state-specific matching, unknown program, invalid date format, empty program | 8 |
@@ -354,7 +358,7 @@ Models tested on Mantle:
 - Monitor Agent with real PolicyEngine diff
 - What If simulator for income/household exploration
 - Mock notification preference UI (email/SMS) with session state storage
-- 112 unit tests + 12 integration tests + 5-profile eval suite
+- 113 unit tests + 12 integration tests + 10-profile eval suite
 
 ### Stage 2 — Pilot Product
 - React/Next.js frontend — mobile-first, accessible on low-end devices and slow connections (the population most likely to need these benefits)
