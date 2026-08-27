@@ -6,23 +6,25 @@ Decoupled from Streamlit. Called by app.py (UI wrapper) and monitor_runner.py (c
 
 import json
 import logging
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 
 from src.agents import create_monitor_agent
-from src.db.profile_store import get_profile, update_snapshot
-from src.pipeline.runner import build_eligibility_profile
+from src.db.profile_store import get_profile, record_notification, update_snapshot, was_recently_notified
+from src.guardrails.profile_validator import ProfileValidationError, validate_profile
+from src.pipeline.runner import _call_agent_with_timeout, build_eligibility_profile
+from src.tools.eligibility_checker import eligibility_checker
+from src.tools.policy_change import check_policy_change
+from src.tools.profile_history import get_profile_history
 
 _MONITOR_AGENT_TIMEOUT_SECONDS = 120
-from src.tools.eligibility_checker import eligibility_checker
 
 logger = logging.getLogger(__name__)
 
-# Changes below this threshold ($/month) are treated as rounding noise, not real changes.
-# SNAP and most programs adjust by small cents-level amounts when FPL changes slightly.
-# $5/month was chosen to avoid alerting users about sub-meaningful fluctuations.
-_BENEFIT_CHANGE_THRESHOLD = 5
+# Changes below this threshold (as a fraction of previous benefit) are rounding noise.
+# Matches the monitor prompt rule: "do not notify for benefit changes below 10%".
+# Example: $300/mo benefit — change must exceed $30 to trigger notification.
+_BENEFIT_CHANGE_THRESHOLD_PCT = 0.10
 
 
 @dataclass
@@ -58,7 +60,7 @@ def _diff_snapshots(previous: dict, current: dict) -> tuple[list, list, list]:
         elif prev_elig and curr_elig:
             prev_amt = float((prev.get("estimated_benefit") or {}).get("monthly", 0) or 0)
             curr_amt = float((curr.get("estimated_benefit") or {}).get("monthly", 0) or 0)
-            if abs(curr_amt - prev_amt) > _BENEFIT_CHANGE_THRESHOLD:
+            if prev_amt > 0 and abs(curr_amt - prev_amt) / prev_amt > _BENEFIT_CHANGE_THRESHOLD_PCT:
                 changed.append((name, prev_amt, curr_amt))
 
     return gained, lost, changed
@@ -81,6 +83,25 @@ def run_monitor_check(
             original_income=0,
             new_income=0,
             error="Invalid intake profile passed to monitor check.",
+        )
+
+    try:
+        validate_profile(intake_profile)
+    except ProfileValidationError as e:
+        return MonitorResult(
+            original_income=int(intake_profile.get("monthly_income") or 0),
+            new_income=int(intake_profile.get("monthly_income") or 0),
+            error=f"Profile validation failed: {e}",
+        )
+
+    # Idempotency guard — EventBridge delivers at-least-once; skip if notified recently
+    if profile_id and was_recently_notified(profile_id):
+        logger.info("monitor_check skipped duplicate run profile_id=%s", profile_id)
+        return MonitorResult(
+            original_income=int(intake_profile.get("monthly_income") or 0),
+            new_income=int(intake_profile.get("monthly_income") or 0),
+            profile_id=profile_id,
+            agent_output="",
         )
 
     orig_income = int(intake_profile.get("monthly_income") or 0)
@@ -165,12 +186,20 @@ def run_monitor_check(
 
     agent = create_monitor_agent()
     try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(agent, prompt)
-            agent_output = str(future.result(timeout=_MONITOR_AGENT_TIMEOUT_SECONDS))
-    except FuturesTimeoutError:
+        agent_output = _call_agent_with_timeout(
+            agent, prompt,
+            timeout=_MONITOR_AGENT_TIMEOUT_SECONDS,
+            _agent_tools=[get_profile_history, check_policy_change],
+        )
+    except TimeoutError:
         logger.error("monitor_check agent_timeout exceeded=%ds profile_id=%s", _MONITOR_AGENT_TIMEOUT_SECONDS, profile_id)
         agent_output = "Eligibility changes were detected but the notification could not be generated — will retry on the next scheduled check."
+    except Exception as e:
+        logger.error("monitor_check agent_failed profile_id=%s error=%s", profile_id, e)
+        agent_output = "Eligibility changes were detected but the notification could not be generated — will retry on the next scheduled check."
+
+    if profile_id:
+        record_notification(profile_id)
 
     return MonitorResult(
         original_income=orig_income,

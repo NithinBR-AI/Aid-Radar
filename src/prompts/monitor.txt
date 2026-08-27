@@ -44,7 +44,7 @@ Narrative format:
 "Your estimated [PROGRAM] benefit changed from $[old]/month to $[new]/month based on updated [year] guidelines."
 
 ## What does NOT trigger a notification
-- Benefit changed by less than 10%
+- Benefit changed by less than 10% (rounding artifacts) — NOTE: this threshold does NOT apply to new eligibility events. If the user was previously ineligible and is now eligible, ALWAYS notify regardless of the benefit amount.
 - Program data was updated but eligibility and benefit are unchanged
 - Programs the user is ineligible for and remains ineligible for
 

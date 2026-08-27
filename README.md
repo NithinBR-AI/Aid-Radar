@@ -54,7 +54,7 @@ The pipeline (`src/pipeline/runner.py`) owns orchestration — agents never call
 ### 1. Intake Agent
 The user has a conversation with the Intake Agent. It asks about income, household composition, state of residence, age, disability status, veteran status, and citizenship. When it has enough information, it presents a structured summary and asks the user to confirm before proceeding.
 
-**What makes it different:** The agent handles corrections mid-conversation ("actually I have 3 kids, not 2"), understands out-of-state users (proceeds with federal thresholds rather than dead-ending), and stores declined fields as `null`/`false` rather than ambiguous strings.
+**What makes it different:** The agent handles corrections mid-conversation ("actually I have 3 kids, not 2"), enforces hard stops for unsupported states rather than silently computing wrong results, and stores declined fields as `null`/`false` rather than ambiguous strings.
 
 ### 2. Eligibility Agent
 The pipeline calls PolicyEngine directly first — deterministic, no LLM involved. The Eligibility Agent receives those results in its prompt and calls `application_finder` for each eligible program to get state-specific URLs and required documents. It decides which programs to look up (eligible programs only), identifies cascading eligibility chains, and builds structured output for the Recommendation Agent.
@@ -68,7 +68,7 @@ Before PolicyEngine runs, `validate_profile` scrubs PII patterns (account number
 
 - **Adults=0 guard** — if all collected members are children (household size equals child count), the validator raises an error and the intake prompt catches this conversationally before it reaches the pipeline.
 - **Elderly headcount check** — the intake now collects `elderly_count` (how many people in the household are 65+, not just yes/no). If `elderly_count > 0` and none of the listed adults are 65+, the validator checks that household size accounts for all elderly members. Fails with a user-friendly message if not.
-- **Out-of-state fallback** — if the user's state is not in the supported set (CA, TX, NY, FL), validation falls back to `CA` federal thresholds rather than hard-failing. The original state is preserved in `state_original` and surfaced as a banner in the results UI, keeping the intake prompt's promise of "we'll use federal thresholds."
+- **Out-of-state hard stop** — if the user's state is not in the supported set (CA, TX, NY, FL), validation raises `ProfileValidationError` immediately. The intake agent ends the interview and tells the user AidRadar doesn't cover their state yet. No silent fallback, no wrong results.
 - **Citizenship normalization** — free-text LLM output ("US citizen", "green card", "unauthorized") is mapped to canonical values (`us_citizen`, `permanent_resident`, `qualified_immigrant`, `undocumented`). Unrecognized values (DACA, refugee, TPS) default to `qualified_immigrant` — the broadest eligible non-citizen category — rather than `us_citizen`, avoiding false eligibility grants.
 - **Child age clamping** — children from the `under_5` bucket are clamped to ages 0–4 and `K-12` children to 5–18, catching any intake agent misclassification before PolicyEngine sees the profile.
 - **Flag wiring** — `has_disabled_member`, `has_pregnant_member`, and `elderly_count` are validated and passed through to PolicyEngine. `is_ssi_disabled` (required for SSI — `is_disabled` alone is not sufficient in PolicyEngine) is set alongside `is_disabled`. `is_pregnant` is set on the appropriate adult with an age guard (12–55). If `elderly_count > 0` but fewer than that many adults are 65+, the exact number of missing elderly members are injected as synthetic 70-year-olds — giving PolicyEngine the correct household size for FPL threshold calculation, not just a single placeholder.
@@ -130,6 +130,7 @@ States: **California, Texas, New York, Florida** — covering ~100 million peopl
 | Storage | Amazon DynamoDB — household profiles + eligibility snapshots, 90-day TTL |
 | Scheduling | AWS EventBridge — triggers Monitor Agent on a recurring schedule |
 | Validation | Custom guardrails layer (`profile_validator.py`) — PII scrubbing, state normalization, bounds checking |
+| PDF generation | fpdf2 — branded PDF export of the full eligibility report |
 
 ---
 
@@ -189,7 +190,7 @@ aid-radar/
 
 AidRadar has three testing layers: unit tests, integration tests, and evals. Each layer serves a different purpose.
 
-### Unit Tests — 95 tests, no external dependencies
+### Unit Tests — 112 tests, no external dependencies
 
 All unit tests mock LLM calls, DynamoDB, and PolicyEngine. They run offline in under 10 seconds.
 
@@ -199,13 +200,14 @@ pytest tests/unit/ -v
 
 | File | What it covers | Tests |
 |------|---------------|-------|
-| `test_profile_validator.py` | Valid profiles pass, invalid profiles raise typed errors, out-of-state fallback | 11 |
-| `test_profile_validator_extended.py` | Edge cases: non-list adults/children, household > 20, income bounds, PII scrubbing, state name normalization, citizenship normalization (DACA, refugee, green card), out-of-state fallback flags | 20 |
-| `test_eligibility_checker.py` | Tool return shape, program keys, error paths, validation integration, out-of-state returns success | 10 |
+| `test_profile_validator.py` | Valid profiles pass, invalid profiles raise typed errors, unsupported state raises | 11 |
+| `test_profile_validator_extended.py` | Edge cases: non-list adults/children, household > 20, income bounds, PII scrubbing, state name normalization, citizenship normalization (DACA, refugee, green card), unsupported state raises | 20 |
+| `test_eligibility_checker.py` | Tool return shape, program keys, error paths, validation integration, out-of-state returns error | 10 |
 | `test_application_finder.py` | URL lookup, document list shape, unknown state/program handling | 6 |
 | `test_pipeline_runner.py` | Pipeline orchestration: eligibility failure, timeout error, rec prompt includes eligibility_profile JSON, What If path, profile conversion | 13 |
 | `test_monitor_pipeline.py` | `_diff_snapshots()`: gained, lost, changed, no-change, small-change threshold, missing programs | 8 |
 | `test_monitor_pipeline_extended.py` | `run_monitor_check()`: eligibility failure → error, gained/lost triggers agent, DynamoDB update, income preservation | 6 |
+| `test_eligibility_output.py` | `parse_eligibility_output()`: valid fenced/bare JSON, missing fields, extra fields stripped, empty eligible programs, None benefit fields | 8 |
 | `test_cliff_effect.py` | Cliff detection, no-cliff path, projected income calculation, invalid inputs, deep copy safety, unknown program_id | 8 |
 | `test_policy_change.py` | Date filtering, ALL-states wildcard, state-specific matching, unknown program, invalid date format, empty program | 8 |
 | `test_profile_history.py` | Returns current + history, empty history, profile not found, empty/None string guards, missing history key | 6 |
@@ -352,7 +354,7 @@ Models tested on Mantle:
 - Monitor Agent with real PolicyEngine diff
 - What If simulator for income/household exploration
 - Mock notification preference UI (email/SMS) with session state storage
-- 95 unit tests + 12 integration tests + 5-profile eval suite
+- 112 unit tests + 12 integration tests + 5-profile eval suite
 
 ### Stage 2 — Pilot Product
 - React/Next.js frontend — mobile-first, accessible on low-end devices and slow connections (the population most likely to need these benefits)

@@ -20,7 +20,7 @@ If cliff_detected is true in the result, add a warning in that program's section
 If cliff_detected is false but projected_monthly_benefit is significantly lower than the current benefit (more than $20/month difference), note the reduction:
 "Note: If your income increases by $500/month, your estimated benefit may drop to $[X]/month."
 
-If the tool returns an error, skip the cliff warning for that program — do not fabricate a result.
+If the tool returns an error or the result is unavailable, omit the cliff effect section for that program entirely — never estimate or fabricate a cliff warning.
 
 ## Report structure
 

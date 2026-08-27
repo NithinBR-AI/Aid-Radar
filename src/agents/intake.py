@@ -10,6 +10,7 @@ The pipeline runner manages the conversation loop: it feeds user input to
 this agent repeatedly until the agent outputs a valid JSON profile block.
 """
 
+from functools import lru_cache
 from pathlib import Path
 
 from strands import Agent
@@ -19,6 +20,7 @@ from src.config import create_mantle_model
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "intake.txt"
 
 
+@lru_cache(maxsize=None)
 def _load_prompt() -> str:
     return _PROMPT_PATH.read_text(encoding="utf-8")
 

@@ -6,3 +6,4 @@ pyyaml
 streamlit
 policyengine-us
 openai
+fpdf2

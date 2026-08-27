@@ -13,13 +13,10 @@ For each saved profile in DynamoDB:
 """
 
 import json
-import sys
 from datetime import datetime, timezone
 
-from src.agents import create_monitor_agent
 from src.config import get_boto_session
-from src.tools.eligibility_checker import eligibility_checker
-from src.db.profile_store import update_snapshot
+from src.pipeline.monitor_pipeline import run_monitor_check
 
 _TABLE_NAME = "aid-radar-profiles"
 
@@ -49,53 +46,33 @@ def run_monitor():
     print(f"  {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}")
     print(f"{'=' * 60}\n")
 
-    agent = create_monitor_agent()
-
     for item in items:
         profile_id = item["profile_id"]
-        profile = json.loads(item["profile"])
-        previous_snapshot = json.loads(item["eligibility_snapshot"])
+        # boto3 returns DynamoDB Map types as Python dicts — not JSON strings
+        profile = item["profile"] if isinstance(item["profile"], dict) else json.loads(item["profile"])
+        previous_snapshot = item["eligibility_snapshot"] if isinstance(item["eligibility_snapshot"], dict) else json.loads(item["eligibility_snapshot"])
 
         print(f"--- Checking profile: {profile_id[:8]}... (state={item.get('state')}) ---")
 
-        # Re-run real eligibility check
-        raw = eligibility_checker(json.dumps(profile))
-        if raw.get("status") != "success":
-            print(f"  Eligibility check failed — skipping")
+        result = run_monitor_check(profile_id, profile, previous_snapshot)
+
+        if result.error:
+            print(f"  Error: {result.error}\n")
             continue
 
-        new_snapshot = raw["content"][0]["json"]["programs"]
-
-        # Pre-compute diff so the agent focuses on narrative, not recalculation
-        gained = [
-            new_snapshot[pid].get("display_name") or pid
-            for pid in new_snapshot
-            if new_snapshot[pid].get("eligible") and not previous_snapshot.get(pid, {}).get("eligible")
-        ]
-        lost = [
-            previous_snapshot[pid].get("display_name") or pid
-            for pid in previous_snapshot
-            if previous_snapshot[pid].get("eligible") and not new_snapshot.get(pid, {}).get("eligible")
-        ]
-
-        if not gained and not lost:
+        if not result.has_changes:
             print(f"  No eligibility changes — skipping notification.\n")
-            update_snapshot(profile_id, new_snapshot)
             continue
 
-        prompt = (
-            f"Scheduled re-check for profile {profile_id[:8]} (state={item.get('state')}).\n\n"
-            "**Eligibility changes (already calculated — do NOT recalculate):**\n"
-            f"- Newly eligible: {', '.join(gained) if gained else 'none'}\n"
-            f"- Lost eligibility: {', '.join(lost) if lost else 'none'}\n\n"
-            "Write a short notification (2-3 sentences) the user would receive via email or SMS. "
-            "Plain English. Name the programs. Tell them what to do next."
-        )
+        if result.gained:
+            print(f"  Newly eligible: {', '.join(result.gained)}")
+        if result.lost:
+            print(f"  Lost eligibility: {', '.join(result.lost)}")
+        if result.changed:
+            for name, prev, curr in result.changed:
+                print(f"  Changed: {name} ${prev:,.0f}/mo → ${curr:,.0f}/mo")
 
-        result = agent(prompt)
-        print(f"\n{result}\n")
-
-        update_snapshot(profile_id, new_snapshot)
+        print(f"\n{result.agent_output}\n")
         print(f"  Snapshot updated in DynamoDB.\n")
 
     print(f"{'=' * 60}")

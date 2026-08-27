@@ -12,6 +12,7 @@ Separating PolicyEngine (deterministic) from interpretation (LLM) means:
 - The agent focuses on what LLMs are good at: reasoning and structuring
 """
 
+from functools import lru_cache
 from pathlib import Path
 
 from strands import Agent
@@ -22,6 +23,7 @@ from src.tools.application_finder import application_finder
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "eligibility.txt"
 
 
+@lru_cache(maxsize=None)
 def _load_prompt() -> str:
     return _PROMPT_PATH.read_text(encoding="utf-8")
 

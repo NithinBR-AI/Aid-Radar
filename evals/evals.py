@@ -19,6 +19,11 @@ from src.agents import (
     create_recommendation_agent,
     create_monitor_agent,
 )
+from src.pipeline.runner import _call_agent_with_timeout
+from src.tools.application_finder import application_finder
+from src.tools.cliff_effect import estimate_cliff_effect
+from src.tools.policy_change import check_policy_change
+from src.tools.profile_history import get_profile_history
 
 # ---------------------------------------------------------------------------
 # Profiles + expected outcomes
@@ -48,6 +53,7 @@ PROFILES = [
             "monthly_income": 900,
             "adults": [{"age": 68, "income": 10800}],
             "children": [],
+            "elderly_count": 1,
             "has_disabled_member": True,
             "has_pregnant_member": False,
             "citizenship_status": "us_citizen",
@@ -109,6 +115,7 @@ PROFILES = [
             "monthly_income": 2200,
             "adults": [{"age": 45, "income": 26400}],
             "children": [],
+            "elderly_count": 0,
             "has_disabled_member": False,
             "has_pregnant_member": False,
             "citizenship_status": "us_citizen",
@@ -239,7 +246,12 @@ INTAKE_CONVERSATION = [
     "No disabilities, no one is pregnant, we are US citizens",
 ]
 
-INTAKE_REQUIRED_FIELDS = ["state", "monthly_income", "household_size"]
+INTAKE_REQUIRED_FIELDS = [
+    "state", "monthly_income", "household_size", "applicant_age",
+    "elderly_count", "has_disabled_member", "has_pregnant_member",
+    "children_under_5", "children_k12", "veteran_in_household",
+    "current_programs", "citizenship_status",
+]
 
 def run_intake_eval() -> dict:
     print("\n" + "=" * 60)
@@ -280,6 +292,15 @@ def run_intake_eval() -> dict:
         errors.append(f"state mismatch: expected CA, got {profile.get('state')}")
     if profile.get("monthly_income") and not (1500 <= profile["monthly_income"] <= 2100):
         errors.append(f"income out of range: {profile.get('monthly_income')} (expected ~1800)")
+    if profile.get("household_size") and profile["household_size"] != 4:
+        errors.append(f"household_size mismatch: expected 4, got {profile.get('household_size')}")
+
+    # Negative check — must not claim ineligible programs or fabricate data
+    raw_text = output.lower()
+    fabricated_fields = ["ssn", "social security number", "address", "bank"]
+    for f in fabricated_fields:
+        if f in raw_text:
+            errors.append(f"agent output contains PII field: '{f}'")
 
     if errors:
         for e in errors:
@@ -310,8 +331,8 @@ def run_recommendation_eval() -> dict:
     )
 
     print("  Running Recommendation Agent...")
-    result = agent(prompt)
-    output = str(result).lower()
+    result = _call_agent_with_timeout(agent, prompt, _agent_tools=[estimate_cliff_effect])
+    output = result.lower()
 
     # Must mention each eligible program by name and include apply/action guidance
     required = ["snap", "medicaid", "wic", "apply"]
@@ -321,6 +342,12 @@ def run_recommendation_eval() -> dict:
             errors.append(f"missing: '{keyword}'")
         else:
             print(f"  PASS  mentions '{keyword}'")
+
+    # Negative check — must NOT claim SSI eligible (case profile has no disability/elderly)
+    if "ssi" in output and "not eligible" not in output:
+        errors.append("hallucination: SSI mentioned as eligible — profile has no disability/elderly flag")
+    else:
+        print("  PASS  did not hallucinate SSI eligibility")
 
     if errors:
         for e in errors:
@@ -369,8 +396,8 @@ def run_monitor_eval() -> dict:
     )
 
     print("  Running Monitor Agent...")
-    result = agent(prompt)
-    output = str(result).lower()
+    result = _call_agent_with_timeout(agent, prompt, _agent_tools=[get_profile_history, check_policy_change])
+    output = result.lower()
 
     errors = []
     # Must mention at least one of the gained programs and include action guidance
@@ -415,8 +442,8 @@ def run_eligibility_agent_eval() -> dict:
     )
 
     print("  Running Eligibility Agent...")
-    result = agent(prompt)
-    output = str(result).lower()
+    result = _call_agent_with_timeout(agent, prompt, _agent_tools=[application_finder])
+    output = result.lower()
 
     errors = []
     # Must mention application URLs or documents for eligible programs
@@ -466,8 +493,8 @@ def run_cliff_effect_eval() -> dict:
     )
 
     print("  Running Recommendation Agent (cliff effect check)...")
-    result = agent(prompt)
-    output = str(result).lower()
+    result = _call_agent_with_timeout(agent, prompt, _agent_tools=[estimate_cliff_effect])
+    output = result.lower()
 
     errors = []
     # Report must include veteran section
@@ -524,8 +551,8 @@ def run_monitor_policy_eval() -> dict:
     )
 
     print("  Running Monitor Agent (policy change detection)...")
-    result = agent(prompt)
-    output = str(result).lower()
+    result = _call_agent_with_timeout(agent, prompt, _agent_tools=[get_profile_history, check_policy_change])
+    output = result.lower()
 
     errors = []
     # Must mention SNAP

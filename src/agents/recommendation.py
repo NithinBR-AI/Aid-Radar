@@ -16,6 +16,7 @@ Generates a warm, actionable, 6th-grade reading level report with:
 - Disclaimer
 """
 
+from functools import lru_cache
 from pathlib import Path
 
 from strands import Agent
@@ -26,6 +27,7 @@ from src.tools.cliff_effect import estimate_cliff_effect
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "recommendation.txt"
 
 
+@lru_cache(maxsize=None)
 def _load_prompt() -> str:
     return _PROMPT_PATH.read_text(encoding="utf-8")
 

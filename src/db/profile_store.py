@@ -12,9 +12,11 @@ PK: profile_id (UUID string)
 TTL: 90 days from last update (no PII sitting indefinitely)
 """
 
+import hashlib
 import json
 import logging
-import uuid
+import threading
+import time
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 
@@ -44,6 +46,7 @@ def _to_dynamo(obj):
     return obj
 _TTL_DAYS = 90
 _table_ensured = False  # module-level flag — avoid repeated describe_table on every write
+_table_lock = threading.Lock()
 
 
 def _table():
@@ -56,40 +59,79 @@ def ensure_table_exists() -> None:
     global _table_ensured
     if _table_ensured:
         return
-    client = get_boto_session().client("dynamodb")
-    try:
-        client.describe_table(TableName=_TABLE_NAME)
-    except client.exceptions.ResourceNotFoundException:
-        client.create_table(
-            TableName=_TABLE_NAME,
-            KeySchema=[{"AttributeName": "profile_id", "KeyType": "HASH"}],
-            AttributeDefinitions=[{"AttributeName": "profile_id", "AttributeType": "S"}],
-            BillingMode="PAY_PER_REQUEST",
-        )
-        waiter = client.get_waiter("table_exists")
-        waiter.wait(TableName=_TABLE_NAME)
-        client.update_time_to_live(
-            TableName=_TABLE_NAME,
-            TimeToLiveSpecification={"Enabled": True, "AttributeName": "ttl"},
-        )
-    _table_ensured = True
+    with _table_lock:
+        if _table_ensured:  # double-checked locking — another thread may have completed it
+            return
+        client = get_boto_session().client("dynamodb")
+        try:
+            client.describe_table(TableName=_TABLE_NAME)
+        except client.exceptions.ResourceNotFoundException:
+            client.create_table(
+                TableName=_TABLE_NAME,
+                KeySchema=[{"AttributeName": "profile_id", "KeyType": "HASH"}],
+                AttributeDefinitions=[{"AttributeName": "profile_id", "AttributeType": "S"}],
+                BillingMode="PAY_PER_REQUEST",
+            )
+            waiter = client.get_waiter("table_exists")
+            waiter.wait(TableName=_TABLE_NAME)
+            client.update_time_to_live(
+                TableName=_TABLE_NAME,
+                TimeToLiveSpecification={"Enabled": True, "AttributeName": "ttl"},
+            )
+        _table_ensured = True
+
+
+def _profile_hash(profile: dict) -> str:
+    """Stable hash of the household profile for idempotent upserts.
+
+    Retrying a failed pipeline run produces the same hash → same profile_id
+    → upsert overwrites instead of creating a duplicate record.
+    Fields that change across runs (timestamps, approximate flags) are excluded.
+    """
+    # Intake profile uses children_under_5 + children_k12; eligibility profile uses children.
+    # Hash covers all child age lists present so two households with same income/size
+    # but different children ages don't collide.
+    children_u5 = profile.get("children_under_5") or []
+    children_k12 = profile.get("children_k12") or []
+    children_flat = profile.get("children") or []
+    all_child_ages = sorted(
+        [c.get("age", 0) for c in children_u5]
+        + [c.get("age", 0) for c in children_k12]
+        + [c.get("age", 0) for c in children_flat]
+    )
+    # adults list is only present on eligibility profiles, not intake profiles.
+    # Use applicant_age (always present in intake) as the adult age anchor.
+    key_fields = {k: profile.get(k) for k in (
+        "state", "monthly_income", "household_size", "applicant_age",
+        "elderly_count", "has_disabled_member", "has_pregnant_member",
+        "veteran_in_household", "citizenship_status",
+    )}
+    key_fields["children_ages"] = all_child_ages
+    stable = json.dumps(key_fields, sort_keys=True, default=str)
+    return hashlib.sha256(stable.encode()).hexdigest()[:32]
+
+
+_SAVE_RETRIES = 2
+_SAVE_RETRY_DELAY = 2  # seconds
 
 
 def save_profile(profile: dict, eligibility_snapshot: dict) -> str:
-    """Save a new profile + eligibility snapshot. Returns profile_id."""
+    """Save a new profile + eligibility snapshot. Returns profile_id.
+
+    Idempotent: repeated calls with the same household profile hash to the same
+    profile_id, so retries produce an upsert rather than a duplicate record.
+    Retries up to _SAVE_RETRIES times on transient DynamoDB errors.
+    """
     ensure_table_exists()
 
-    profile_id = str(uuid.uuid4())
+    profile_id = _profile_hash(profile)
     now = datetime.now(timezone.utc)
     ttl = int((now + timedelta(days=_TTL_DAYS)).timestamp())
 
-    # Store as native DynamoDB maps (not JSON strings) so fields are queryable.
-    # json round-trip normalises numpy types; _to_dynamo converts floats → Decimal
-    # (boto3 rejects Python floats in native maps).
     clean_profile = _to_dynamo(json.loads(json.dumps(profile, default=safe_serialize)))
     clean_snapshot = _to_dynamo(json.loads(json.dumps(eligibility_snapshot, default=safe_serialize)))
 
-    _table().put_item(Item={
+    item = {
         "profile_id": profile_id,
         "profile": clean_profile,
         "eligibility_snapshot": clean_snapshot,
@@ -97,9 +139,24 @@ def save_profile(profile: dict, eligibility_snapshot: dict) -> str:
         "updated_at": now.isoformat(),
         "state": profile.get("state", "unknown").upper(),
         "ttl": ttl,
-    })
+    }
 
-    return profile_id
+    last_error = None
+    for attempt in range(1 + _SAVE_RETRIES):
+        try:
+            _table().put_item(Item=item)
+            return profile_id
+        except ClientError as e:
+            last_error = e
+            code = e.response["Error"]["Code"]
+            if code in ("ProvisionedThroughputExceededException", "RequestLimitExceeded", "ServiceUnavailable"):
+                if attempt < _SAVE_RETRIES:
+                    time.sleep(_SAVE_RETRY_DELAY * (attempt + 1))
+                    continue
+            break
+
+    logger.error("save_profile failed after %d attempts error=%s", attempt + 1, last_error)
+    return None
 
 
 def get_profile(profile_id: str) -> dict | None:
@@ -178,3 +235,38 @@ def update_snapshot(
     except ClientError as e:
         logger.error("update_snapshot failed profile_id=%s error=%s", profile_id, e.response["Error"]["Code"])
         return False
+
+
+_NOTIFICATION_DEDUP_HOURS = 6  # suppress duplicate notifications within this window
+
+
+def was_recently_notified(profile_id: str) -> bool:
+    """Return True if a notification was sent for this profile within the dedup window.
+
+    Prevents duplicate notifications when EventBridge fires more than once (at-least-once delivery).
+    """
+    try:
+        response = _table().get_item(
+            Key={"profile_id": profile_id},
+            ProjectionExpression="last_notified_at",
+        )
+        item = response.get("Item")
+        if not item or "last_notified_at" not in item:
+            return False
+        last = datetime.fromisoformat(item["last_notified_at"])
+        return (datetime.now(timezone.utc) - last).total_seconds() < _NOTIFICATION_DEDUP_HOURS * 3600
+    except ClientError as e:
+        logger.warning("was_recently_notified check failed profile_id=%s error=%s — blocking notification (safe default)", profile_id, e.response["Error"]["Code"])
+        return True
+
+
+def record_notification(profile_id: str) -> None:
+    """Stamp last_notified_at on the profile record after a notification is sent."""
+    try:
+        _table().update_item(
+            Key={"profile_id": profile_id},
+            UpdateExpression="SET last_notified_at = :t",
+            ExpressionAttributeValues={":t": datetime.now(timezone.utc).isoformat()},
+        )
+    except ClientError as e:
+        logger.warning("record_notification failed profile_id=%s error=%s", profile_id, e.response["Error"]["Code"])

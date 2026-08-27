@@ -107,14 +107,42 @@ def test_citizenship_green_card_normalizes():
     assert result["citizenship_status"] == "permanent_resident"
 
 
-def test_out_of_state_sets_fallback_flags():
+def test_out_of_state_raises():
     p = {**VALID, "state": "WA"}
-    result = validate_profile(p)
-    assert result["state_is_fallback"] is True
-    assert result["state_original"] == "WA"
-    assert result["state"] == "CA"
+    with pytest.raises(ProfileValidationError, match="Unrecognized or unsupported state"):
+        validate_profile(p)
 
 
-def test_supported_state_no_fallback_flag():
+def test_supported_state_valid():
     result = validate_profile(VALID)
-    assert result.get("state_is_fallback") is not True
+    assert result["state"] in {"CA", "TX", "NY", "FL"}
+
+
+def test_household_size_clamped_to_max_20():
+    result = validate_profile({**VALID, "household_size": 100})
+    assert result["household_size"] == 20
+
+
+def test_household_size_negative_clamped_to_1():
+    result = validate_profile({**VALID, "household_size": -5})
+    assert result["household_size"] == 1
+
+
+def test_household_size_string_coerced():
+    result = validate_profile({**VALID, "household_size": "4"})
+    assert result["household_size"] == 4
+
+
+def test_household_size_bad_value_defaults_to_1():
+    result = validate_profile({**VALID, "household_size": "abc"})
+    assert result["household_size"] == 1
+
+
+def test_citizenship_declined_returns_none():
+    result = validate_profile({**VALID, "citizenship_status": "declined"})
+    assert result["citizenship_status"] is None
+
+
+def test_citizenship_prefer_not_to_say_returns_none():
+    result = validate_profile({**VALID, "citizenship_status": "prefer not to say"})
+    assert result["citizenship_status"] is None

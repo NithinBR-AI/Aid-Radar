@@ -3,6 +3,7 @@ AidRadar — Streamlit web app.
 Run with: streamlit run src/app.py
 """
 
+import io
 import json
 import os
 import re
@@ -356,10 +357,10 @@ if "baseline_programs" not in st.session_state:
     st.session_state.baseline_programs = {}
 if "profile_id" not in st.session_state:
     st.session_state.profile_id = None
-if "state_is_fallback" not in st.session_state:
-    st.session_state.state_is_fallback = False
-if "state_original" not in st.session_state:
-    st.session_state.state_original = None
+if "wi_reset_counter" not in st.session_state:
+    st.session_state.wi_reset_counter = 0
+if "error_programs" not in st.session_state:
+    st.session_state.error_programs = []
 
 
 # ---------------------------------------------------------------------------
@@ -502,32 +503,106 @@ def show_intake():
         if st.session_state.intake_agent is None:
             with st.spinner("Starting intake agent..."):
                 st.session_state.intake_agent = create_intake_agent()
-                st.session_state.intake_agent(
-                    "You already greeted the user with: 'Welcome to AidRadar! I'll ask you a few "
-                    "quick questions about your household so we can check your eligibility across "
-                    "8 federal benefit programs. Let's start — what state do you live in?' "
-                    "The user's reply is coming next. Do NOT re-greet or re-ask the state question. "
-                    "Process their state answer and move to question 2 (household size)."
-                )
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                result = st.session_state.intake_agent(user_input)
+                # On the very first user message (state answer), prepend context so the
+                # agent doesn't re-greet or skip household_size.
+                if sum(1 for m in st.session_state.messages if m["role"] == "user") == 1:
+                    primed_input = (
+                        "SYSTEM NOTE (not from user): You already greeted the user and asked "
+                        "what state they live in. Their answer follows. Do NOT re-greet. "
+                        "After processing their state, your NEXT question MUST be household size: "
+                        "'How many people total live in your household, including yourself?' "
+                        "Do not skip this question.\n\n"
+                        f"USER: {user_input}"
+                    )
+                    result = st.session_state.intake_agent(primed_input)
+                else:
+                    result = st.session_state.intake_agent(user_input)
                 agent_text = str(result)
 
         st.session_state.messages.append({"role": "assistant", "content": agent_text})
 
         profile = extract_json_profile(agent_text)
         if profile and "state" in profile and "monthly_income" in profile:
-            st.session_state.profile = profile
-            st.session_state.stage = "processing"
-            st.rerun()
+            # Headcount sanity check — catch impossible households before confirmation
+            _under5 = len(profile.get("children_under_5") or [])
+            _k12 = len(profile.get("children_k12") or [])
+            _elderly = int(profile.get("elderly_count") or 0)
+            _hsize = int(profile.get("household_size") or 1)
+            _min_needed = _under5 + _k12 + _elderly + 1  # +1 for applicant
+            if _hsize < _min_needed:
+                feedback = (
+                    f"I noticed a mismatch in your household numbers: you listed "
+                    f"{_under5} child{'ren' if _under5 != 1 else ''} under 5, "
+                    f"{_k12} school-age child{'ren' if _k12 != 1 else ''}, and "
+                    f"{_elderly} elderly member{'s' if _elderly != 1 else ''} — "
+                    f"that's at least {_min_needed} people including yourself, "
+                    f"but you said your household size is {_hsize}. "
+                    f"Can you confirm the total number of people in your household?"
+                )
+                st.session_state.messages.append({"role": "assistant", "content": feedback})
+                with st.chat_message("assistant"):
+                    st.markdown(feedback)
+                st.rerun()
+            else:
+                st.session_state.profile = profile
+                st.session_state.stage = "confirm_profile"
+                st.rerun()
         elif profile and ("state" not in profile or "monthly_income" not in profile):
             missing = [f for f in ("state", "monthly_income") if f not in profile]
             with st.chat_message("assistant"):
                 st.warning(f"Profile captured but missing required fields: {', '.join(missing)}. Continuing interview...")
             st.rerun()
         else:
+            st.rerun()
+
+
+# ---------------------------------------------------------------------------
+# Profile confirmation diff — structured review before pipeline runs
+# ---------------------------------------------------------------------------
+def show_confirm_profile():
+    profile = st.session_state.get("profile", {})
+    render_pipeline("eligibility")
+    st.markdown("#### Does this look right?")
+    st.caption("We parsed your answers into the profile below. Confirm to run the eligibility check, or go back to correct anything.")
+
+    children_under_5 = profile.get("children_under_5") or []
+    children_k12 = profile.get("children_k12") or []
+    total_children = len(children_under_5) + len(children_k12)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("State", profile.get("state", "—"))
+        st.metric("Household size", profile.get("household_size", "—"))
+        st.metric("Monthly income", f"${profile.get('monthly_income', 0):,.0f}" + (" (approx)" if profile.get("income_is_approximate") else ""))
+        st.metric("Applicant age", profile.get("applicant_age", "—"))
+    with col2:
+        st.metric("Children", total_children)
+        st.metric("Elderly members (65+)", profile.get("elderly_count", 0))
+        st.metric("Veteran in household", "Yes" if profile.get("veteran_in_household") else "No")
+        st.metric("Citizenship", (profile.get("citizenship_status") or "not provided").replace("_", " ").title())
+
+    flags = []
+    if profile.get("has_disabled_member"):
+        flags.append("Disabled member")
+    if profile.get("has_pregnant_member"):
+        flags.append("Pregnant member")
+    if profile.get("current_programs"):
+        flags.append(f"Currently enrolled: {', '.join(profile['current_programs'])}")
+    if flags:
+        st.info(" · ".join(flags))
+
+    col_confirm, col_back = st.columns([1, 1])
+    with col_confirm:
+        if st.button("✓ Looks right — check my eligibility", type="primary", use_container_width=True):
+            st.session_state.stage = "processing"
+            st.rerun()
+    with col_back:
+        if st.button("← Something's wrong — go back", use_container_width=True):
+            st.session_state.stage = "intake"
+            st.session_state.profile = None
             st.rerun()
 
 
@@ -564,8 +639,7 @@ def show_processing():
         st.session_state.report = result.report_text
         st.session_state.baseline_programs = result.programs
         st.session_state.profile_id = result.profile_id
-        st.session_state.state_is_fallback = result.state_is_fallback
-        st.session_state.state_original = result.state_original
+        st.session_state.error_programs = result.error_programs
 
         status.update(label="Pipeline complete!", state="complete", expanded=False)
         st.session_state.stage = "results"
@@ -614,26 +688,35 @@ def _show_whatif_section(base_profile: dict, original_programs: dict):
     else:
         orig_adults = max(1, base_profile.get("household_size", 1) - orig_children)
 
+    _rc = st.session_state.wi_reset_counter
     col1, col2, col3 = st.columns(3)
     with col1:
-        wi_income = st.slider("Monthly Income ($/mo)", min_value=0, max_value=10000, value=int(orig_income), step=100, key="wi_income")
+        wi_income = st.slider("Monthly Income ($/mo)", min_value=0, max_value=10000, value=int(orig_income), step=100, key=f"wi_income_{_rc}")
         st.caption(f"Current: ${int(orig_income):,}/mo")
     with col2:
-        wi_adults = st.slider("Number of Adults", 1, 4, orig_adults, key="wi_adults")
+        wi_adults = st.slider("Number of Adults", 1, 4, orig_adults, key=f"wi_adults_{_rc}")
         st.caption(f"Current: {orig_adults}")
     with col3:
-        wi_children = st.slider("Number of Children", 0, 6, orig_children, key="wi_children")
+        wi_children = st.slider("Number of Children", 0, 6, orig_children, key=f"wi_children_{_rc}")
         st.caption(f"Current: {orig_children}")
 
     changed = (wi_income != int(orig_income)) or (wi_adults != orig_adults) or (wi_children != orig_children)
 
-    if changed:
-        if st.button("Recalculate Eligibility", type="primary", use_container_width=True, key="wi_calc"):
-            with st.spinner("Running eligibility check..."):
-                st.session_state.whatif_results = run_whatif(base_profile, wi_income, wi_adults, wi_children)
-            st.rerun()
-    else:
-        st.caption("Adjust the sliders above to explore different scenarios.")
+    col_calc, col_reset = st.columns([3, 1])
+    with col_calc:
+        if changed:
+            if st.button("Recalculate Eligibility", type="primary", use_container_width=True, key="wi_calc"):
+                with st.spinner("Running eligibility check..."):
+                    st.session_state.whatif_results = run_whatif(base_profile, wi_income, wi_adults, wi_children)
+                st.rerun()
+        else:
+            st.caption("Adjust the sliders above to explore different scenarios.")
+    with col_reset:
+        if changed:
+            if st.button("Reset", use_container_width=True, key="wi_reset"):
+                st.session_state.wi_reset_counter += 1
+                st.session_state.whatif_results = None
+                st.rerun()
 
     if st.session_state.whatif_results:
         _render_whatif_comparison(original_programs, st.session_state.whatif_results)
@@ -766,6 +849,181 @@ def _show_notification_preference():
 
 
 # ---------------------------------------------------------------------------
+# PDF report generation
+# ---------------------------------------------------------------------------
+def _build_pdf_report(profile: dict, eligibility_data: dict, report_text: str) -> bytes:
+    from fpdf import FPDF
+
+    NAV = (27, 58, 92)       # brand navy
+    NAV_LIGHT = (238, 241, 245)  # light navy tint
+    GREEN = (46, 125, 50)    # eligible green
+    GREY = (120, 120, 120)   # ineligible grey
+    WHITE = (255, 255, 255)
+    DARK = (30, 30, 30)
+
+    class _PDF(FPDF):
+        def header(self):
+            self.set_fill_color(*NAV)
+            self.rect(0, 0, 210, 22, "F")
+            self.set_y(5)
+            self.set_font("Helvetica", "B", 15)
+            self.set_text_color(*WHITE)
+            self.cell(0, 8, "AidRadar", align="C", new_x="LMARGIN", new_y="NEXT")
+            self.set_font("Helvetica", "", 8)
+            self.set_text_color(180, 200, 220)
+            self.cell(0, 5, "Benefits Eligibility Report", align="C", new_x="LMARGIN", new_y="NEXT")
+            self.set_y(26)
+            self.set_text_color(*DARK)
+
+        def footer(self):
+            self.set_y(-12)
+            self.set_font("Helvetica", "I", 7)
+            self.set_text_color(*GREY)
+            self.cell(0, 6, "Generated by AidRadar  ·  For informational purposes only  ·  Verify eligibility with official program offices", align="C")
+
+        def section_title(self, text: str):
+            self.ln(3)
+            self.set_fill_color(*NAV_LIGHT)
+            self.set_draw_color(*NAV)
+            self.set_font("Helvetica", "B", 10)
+            self.set_text_color(*NAV)
+            self.set_x(15)
+            self.cell(0, 7, text, border="L", fill=True, new_x="LMARGIN", new_y="NEXT")
+            self.set_text_color(*DARK)
+            self.ln(2)
+
+        def kv_row(self, label: str, value: str):
+            self.set_font("Helvetica", "B", 9)
+            self.set_text_color(*GREY)
+            self.set_x(18)
+            self.cell(52, 6, label.upper(), new_x="END", new_y="TOP")
+            self.set_font("Helvetica", "", 9)
+            self.set_text_color(*DARK)
+            self.cell(0, 6, value, new_x="LMARGIN", new_y="NEXT")
+
+    def _safe(text: str) -> str:
+        """Strip/replace characters outside Latin-1 so Helvetica doesn't choke."""
+        return (str(text)
+                .replace("—", " - ").replace("–", " - ")
+                .replace("‘", "'").replace("’", "'")
+                .replace("“", '"').replace("”", '"')
+                .replace("•", "-").replace("…", "...")
+                .encode("latin-1", errors="replace").decode("latin-1"))
+
+    pdf = _PDF()
+    pdf.set_margins(15, 28, 15)
+    pdf.set_auto_page_break(auto=True, margin=16)
+    pdf.add_page()
+
+    # ── Big number summary banner ──────────────────────────────────────────
+    total_monthly = eligibility_data.get("total_estimated_monthly_benefit", 0) or 0
+    total_annual = eligibility_data.get("total_estimated_annual_benefit", 0) or 0
+    eligible_count = len(eligibility_data.get("eligible_programs", []))
+
+    pdf.set_fill_color(*NAV_LIGHT)
+    pdf.set_x(15)
+    pdf.set_font("Helvetica", "B", 22)
+    pdf.set_text_color(*NAV)
+    pdf.cell(0, 12, f"${total_monthly:,.0f}/month", align="C", fill=False, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(*GREY)
+    pdf.cell(0, 5, _safe(f"${total_annual:,.0f}/year  -  {eligible_count} eligible program{'s' if eligible_count != 1 else ''}"), align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+
+    # ── Household summary ─────────────────────────────────────────────────
+    pdf.section_title("Household Summary")
+    state_display = profile.get("state", "N/A")
+    under5 = len(profile.get("children_under_5") or [])
+    k12 = len(profile.get("children_k12") or [])
+    elderly = int(profile.get("elderly_count") or 0)
+    disability = "Yes" if profile.get("has_disabled_member") else "No"
+    pregnant = "Yes" if profile.get("has_pregnant_member") else "No"
+    veteran = "Yes" if profile.get("veteran_in_household") else "No"
+    citizenship = _safe(str(profile.get("citizenship_status") or "Not provided").replace("_", " ").title())
+    current_programs = profile.get("current_programs") or []
+    enrolled = _safe(", ".join(current_programs) if current_programs else "None")
+
+    pdf.kv_row("State", _safe(str(state_display)))
+    pdf.kv_row("Household size", _safe(str(profile.get("household_size", "N/A"))))
+    pdf.kv_row("Monthly income", f"${int(profile.get('monthly_income') or 0):,}")
+    pdf.kv_row("Applicant age", _safe(str(profile.get("applicant_age", "N/A"))))
+    pdf.kv_row("Children under 5", str(under5))
+    pdf.kv_row("Children in K-12", str(k12))
+    pdf.kv_row("Adults 65 or older", str(elderly))
+    pdf.kv_row("Disability in household", disability)
+    pdf.kv_row("Pregnant member", pregnant)
+    pdf.kv_row("Veteran in household", veteran)
+    pdf.kv_row("Citizenship status", citizenship)
+    pdf.kv_row("Currently enrolled in", enrolled)
+
+    # ── Eligible programs ─────────────────────────────────────────────────
+    eligible = eligibility_data.get("eligible_programs", [])
+    pdf.section_title(f"Eligible Programs ({eligible_count})")
+
+    if eligible:
+        for prog in eligible:
+            name = prog.get("display_name") or prog.get("program_name") or prog.get("program_id", "").upper()
+            monthly = prog.get("estimated_monthly_benefit")
+            url = prog.get("apply_url") or prog.get("application_url", "")
+            docs = prog.get("required_documents") or []
+            cascading = prog.get("cascading_benefits") or []
+
+            # Green accent bar
+            pdf.set_fill_color(*GREEN)
+            pdf.rect(15, pdf.get_y(), 2, 10, "F")
+
+            pdf.set_x(19)
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(*GREEN)
+            amt_str = f"  -  ${monthly:,.2f}/mo" if monthly else "  -  Coverage benefit"
+            pdf.cell(0, 6, _safe(f"{name}{amt_str}"), new_x="LMARGIN", new_y="NEXT")
+
+            if url:
+                pdf.set_x(19)
+                pdf.set_font("Helvetica", "I", 8)
+                pdf.set_text_color(*NAV)
+                pdf.multi_cell(0, 4, _safe(f"Apply: {url}"), new_x="LMARGIN", new_y="NEXT")
+
+            if docs:
+                pdf.set_x(19)
+                pdf.set_font("Helvetica", "", 8)
+                pdf.set_text_color(*GREY)
+                pdf.multi_cell(0, 4, _safe(f"Documents: {', '.join(docs)}"), new_x="LMARGIN", new_y="NEXT")
+
+            if cascading:
+                pdf.set_x(19)
+                pdf.set_font("Helvetica", "", 8)
+                pdf.set_text_color(*GREY)
+                names = ", ".join(c.replace("_", " ").title() for c in cascading)
+                pdf.multi_cell(0, 4, _safe(f"Unlocks: {names}"), new_x="LMARGIN", new_y="NEXT")
+
+            pdf.set_text_color(*DARK)
+            pdf.ln(2)
+    else:
+        pdf.set_x(18)
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.set_text_color(*GREY)
+        pdf.cell(0, 6, "No eligible programs found.", new_x="LMARGIN", new_y="NEXT")
+
+    # ── Ineligible programs ───────────────────────────────────────────────
+    ineligible = eligibility_data.get("ineligible_programs", [])
+    if ineligible:
+        pdf.section_title(f"Not Currently Eligible ({len(ineligible)})")
+        for prog in ineligible:
+            name = prog.get("display_name") or prog.get("program_name") or prog.get("program_id", "").upper()
+            reason = prog.get("reason", "")
+            pdf.set_x(19)
+            pdf.set_font("Helvetica", "B", 9)
+            pdf.set_text_color(*GREY)
+            pdf.cell(0, 5, _safe(name + (f"  -  {reason}" if reason else "")), new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*DARK)
+
+    # Full narrative page intentionally omitted — page 1 program cards are the complete output.
+
+    return bytes(pdf.output())
+
+
+# ---------------------------------------------------------------------------
 # Results dashboard
 # ---------------------------------------------------------------------------
 def _parse_eligibility_json(text: str) -> dict | None:
@@ -784,16 +1042,14 @@ def _parse_eligibility_json(text: str) -> dict | None:
 def show_results():
     render_pipeline("recommendation")
 
-    # Surface out-of-area fallback so the intake promise is kept end-to-end
-    if st.session_state.get("state_is_fallback"):
-        state_orig = st.session_state.get("state_original") or "your state"
-        st.info(
-            f"**Note:** AidRadar currently covers California, Texas, New York, and Florida. "
-            f"Since you're in **{state_orig}**, your results are based on federal program "
-            f"thresholds — state-specific benefit amounts may vary when you apply."
-        )
-
     eligibility_data = _parse_eligibility_json(st.session_state.eligibility_results or "")
+
+    _err_progs = st.session_state.get("error_programs") or []
+    if _err_progs:
+        st.warning(
+            f"**Note:** {', '.join(p.upper() for p in _err_progs)} could not be assessed due to a calculation error. "
+            "Contact a benefits counselor to check eligibility for these programs."
+        )
 
     if not eligibility_data:
         st.info("Could not parse structured eligibility data — showing the full agent report below.")
@@ -823,6 +1079,7 @@ def show_results():
             <div class="sub">${total_annual:,.0f}/year across {eligible_count} programs</div>
         </div>
         """, unsafe_allow_html=True)
+        st.caption("Estimates based on PolicyEngine microsimulation — verify eligibility with the program office before applying.")
 
         st.markdown("""
         <div style="background:#EEF1F5;border:1px solid #B0C4D8;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.8rem;">
@@ -851,51 +1108,80 @@ def show_results():
             with cols[i % 2]:
                 name = prog.get("display_name") or prog.get("program_name") or prog.get("program_id", "").replace("_", " ").upper()
                 monthly = prog.get("estimated_monthly_benefit")
-                url = prog.get("apply_url", "")
-                cascading = prog.get("cascading_benefits", [])
+                url = prog.get("apply_url") or prog.get("application_url", "")
+                cascading = prog.get("cascading_benefits") or []
                 cliff_detected = prog.get("cliff_detected", False)
+                docs = prog.get("required_documents") or []
 
                 amount_html = f'<div class="amount">${monthly:,.2f}/mo</div>' if monthly else '<div style="font-size:0.9rem;color:#666;margin-top:0.4rem;">Coverage benefit — no $ estimate available</div>'
-                apply_html = f'<div style="margin-top:0.5rem;"><a href="{url}" target="_blank" style="color:#1B3A5C;font-weight:600;">Apply here &rarr;</a></div>' if url else ""
+                apply_html = f'<div style="margin-top:0.6rem;"><a href="{url}" target="_blank" style="color:#1B3A5C;font-weight:700;text-decoration:none;">Apply here &rarr;</a></div>' if url else ""
+
+                # Cascading benefits as inline chips
+                if cascading:
+                    chip_html = "".join(
+                        f'<span style="display:inline-block;background:#E8F5E9;color:#2E7D32;border:1px solid #A5D6A7;border-radius:20px;padding:0.1rem 0.55rem;font-size:0.72rem;font-weight:600;margin:0.15rem 0.15rem 0 0;">{c.replace("_"," ").title()}</span>'
+                        for c in cascading
+                    )
+                    cascade_html = f'<div style="margin-top:0.5rem;"><span style="font-size:0.75rem;color:#888;margin-right:0.3rem;">Unlocks</span>{chip_html}</div>'
+                else:
+                    cascade_html = ""
+
+                # Cliff alert inline
+                cliff_html = (
+                    '<div style="margin-top:0.6rem;background:#FFF8E1;border:1px solid #FFD54F;border-radius:6px;padding:0.3rem 0.6rem;font-size:0.8rem;color:#795548;">'
+                    '⚠️ Benefit cliff — a modest income increase could make you ineligible.'
+                    '</div>'
+                ) if cliff_detected else ""
 
                 st.markdown(f"""
-                <div class="benefit-card" style="border-left:4px solid #1B3A5C;min-height:130px;">
+                <div class="benefit-card" style="border-left:4px solid #1B3A5C;">
                     <span class="eligible-badge">ELIGIBLE</span>
                     <h4>{name}</h4>
                     {amount_html}
                     {apply_html}
+                    {cascade_html}
+                    {cliff_html}
                 </div>
                 """, unsafe_allow_html=True)
 
-                if cascading:
-                    cascade_names = ", ".join(c.replace("_", " ").title() for c in cascading)
-                    st.caption(f"\U0001f517 Unlocks: {cascade_names}")
-
-                if cliff_detected:
-                    st.warning(
-                        f"⚠️ **Benefit cliff detected for {name}:** earning $500/month more could make you ineligible. "
-                        "Consider timing income increases carefully.",
-                        icon=None,
-                    )
+                # Required documents — expandable, doesn't bloat the card
+                if docs:
+                    with st.expander(f"Documents needed for {name}", expanded=False):
+                        for doc in docs:
+                            st.markdown(f"- {doc}")
 
         # Ineligible programs
         ineligible = eligibility_data.get("ineligible_programs", [])
         if ineligible:
             st.markdown("### Not Eligible")
-            for prog in ineligible:
-                name = prog.get("display_name") or prog.get("program_name") or prog.get("program_id", "").replace("_", " ").upper()
-                reason = prog.get("reason", "")
-                st.markdown(f"""
-                <div class="benefit-card" style="border-left:4px solid #CCCCCC;">
-                    <span class="ineligible-badge">NOT ELIGIBLE</span>
-                    <h4>{name}</h4>
-                    <div style="color:#666;font-size:0.9rem;">{reason}</div>
-                </div>
-                """, unsafe_allow_html=True)
+            cols_in = st.columns(2)
+            for i, prog in enumerate(ineligible):
+                with cols_in[i % 2]:
+                    name = prog.get("display_name") or prog.get("program_name") or prog.get("program_id", "").replace("_", " ").upper()
+                    reason = prog.get("reason", "")
+                    st.markdown(f"""
+                    <div class="benefit-card" style="border-left:4px solid #CCCCCC;">
+                        <span class="ineligible-badge">NOT ELIGIBLE</span>
+                        <h4>{name}</h4>
+                        <div style="color:#666;font-size:0.9rem;">{reason}</div>
+                    </div>
+                    """, unsafe_allow_html=True)
 
 
-    # What If simulator
+    # What If simulator callout — anchors it visually before the fold
     if st.session_state.profile:
+        st.markdown("""
+        <div id="whatif-anchor" style="background:#EEF1F5;border:1px solid #B0C4D8;border-radius:12px;
+                    padding:0.8rem 1.2rem;margin:0.5rem 0 0;display:flex;align-items:center;gap:0.8rem;">
+            <div style="font-size:1.4rem;">🔢</div>
+            <div>
+                <div style="font-weight:700;color:#1B3A5C;font-size:0.95rem;">What If Simulator — below</div>
+                <div style="color:#2A5480;font-size:0.85rem;margin-top:0.1rem;">
+                    Change your income, household size, or number of children to instantly see how your eligibility shifts.
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
         original_programs = st.session_state.get("baseline_programs") or {}
         _show_whatif_section(st.session_state.profile, original_programs)
 
@@ -907,9 +1193,11 @@ def show_results():
     # Monitor Agent demo
     st.markdown("---")
     st.markdown("### Monitor Agent")
-    st.caption(
-        "Runs every January on AWS EventBridge — re-checks your saved profile against updated federal guidelines "
-        "and notifies you only if your eligibility changed."
+    st.info(
+        "**What this does:** Re-runs your eligibility check against the latest federal poverty guidelines "
+        "and alerts you if anything changed — the same check that runs automatically every January on AWS EventBridge. "
+        "Click below to simulate it now.",
+        icon="🔔",
     )
 
     if st.button("Run Monitor Agent", type="primary", use_container_width=True, key="run_monitor"):
@@ -920,24 +1208,41 @@ def show_results():
 
     # Actions
     st.markdown("---")
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("Start Over", use_container_width=True):
             for key in ["stage", "messages", "intake_agent", "profile",
                         "eligibility_results", "report", "monitor_notifications", "whatif_results",
-                        "baseline_programs", "profile_id", "notification_saved",
+                        "baseline_programs", "profile_id", "error_programs", "notification_saved",
                         "notification_value", "notification_channel"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
     with col2:
+        if eligibility_data and st.session_state.profile:
+            try:
+                pdf_bytes = _build_pdf_report(
+                    st.session_state.profile,
+                    eligibility_data,
+                    st.session_state.report or "",
+                )
+                st.download_button(
+                    "Download Report (PDF)",
+                    data=pdf_bytes,
+                    file_name="aidradar_benefits_report.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                )
+            except Exception as _pdf_err:
+                st.button("Download Report (PDF)", disabled=True, use_container_width=True, help=f"PDF error: {_pdf_err}")
+    with col3:
         if st.button("View Household Profile", use_container_width=True):
             p = st.session_state.profile or {}
             under5 = p.get("children_under_5") or []
             k12 = p.get("children_k12") or []
             total_children = len(under5) + len(k12)
             elderly = p.get("elderly_count", 1 if p.get("has_elderly_65_plus") else 0)
-            state_display = p.get("state_original") or p.get("state", "—")
+            state_display = p.get("state", "—")
             income_note = " (approximate)" if p.get("income_is_approximate") else ""
             citizenship_map = {
                 "us_citizen": "US Citizen",
@@ -1025,7 +1330,7 @@ def _render_monitor_notifications():
         for name in gained:
             st.markdown(f"""
             <div class="notif-card">
-                <div class="notif-tier low">NEW — Tier 1</div>
+                <div class="notif-tier low">NEWLY ELIGIBLE</div>
                 <h4>{name}</h4>
                 <p>You are now eligible. Apply as soon as possible.</p>
             </div>
@@ -1035,7 +1340,7 @@ def _render_monitor_notifications():
             sign = "+" if delta > 0 else ""
             st.markdown(f"""
             <div class="notif-card medium">
-                <div class="notif-tier medium">CHANGED — Tier 3</div>
+                <div class="notif-tier medium">AMOUNT CHANGED</div>
                 <h4>{name}</h4>
                 <p>${prev_amt:,.0f}/mo → ${curr_amt:,.0f}/mo ({sign}${delta:,.0f})</p>
             </div>
@@ -1044,14 +1349,14 @@ def _render_monitor_notifications():
         for name in lost:
             st.markdown(f"""
             <div class="notif-card high">
-                <div class="notif-tier high">LOST — Tier 2</div>
+                <div class="notif-tier high">LOST ELIGIBILITY</div>
                 <h4>{name}</h4>
                 <p>You may no longer qualify. Update your profile if your situation changed.</p>
             </div>
             """, unsafe_allow_html=True)
 
     if not gained and not lost and not changed:
-        st.info("No eligibility changes detected with this income level.")
+        st.info("No eligibility changes — your current programs are unaffected by the latest federal guidelines.")
 
     with st.expander("Monitor Agent Full Analysis", expanded=False):
         st.markdown(data["agent_output"])
@@ -1067,6 +1372,8 @@ def main():
         show_landing()
     elif stage == "intake":
         show_intake()
+    elif stage == "confirm_profile":
+        show_confirm_profile()
     elif stage == "processing":
         show_processing()
     elif stage == "results":

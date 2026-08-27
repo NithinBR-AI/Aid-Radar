@@ -14,6 +14,7 @@ Notifies ONLY when something meaningful changed. Zero-change runs produce
 zero output.
 """
 
+from functools import lru_cache
 from pathlib import Path
 
 from strands import Agent
@@ -25,6 +26,7 @@ from src.tools.profile_history import get_profile_history
 _PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "monitor.txt"
 
 
+@lru_cache(maxsize=None)
 def _load_prompt() -> str:
     return _PROMPT_PATH.read_text(encoding="utf-8")
 

@@ -65,3 +65,9 @@ def test_no_url_available():
         result = application_finder("snap", "CA")
     assert result["content"][0]["json"]["url_source"] == "none"
     assert result["content"][0]["json"]["apply_url"] is None
+
+
+def test_corrupt_json_returns_error():
+    with patch("src.tools.application_finder._load_program", side_effect=FileNotFoundError("corrupt")):
+        result = application_finder("snap", "CA")
+    assert result["status"] == "error"

@@ -9,7 +9,6 @@ and strips PII patterns that should never be stored.
 import re
 
 SUPPORTED_STATES = {"CA", "TX", "NY", "FL"}
-FEDERAL_FALLBACK_STATE = "CA"  # PolicyEngine state used when user is out-of-supported-area
 
 CITIZENSHIP_VALUES = {"us_citizen", "permanent_resident", "qualified_immigrant", "undocumented"}
 
@@ -24,6 +23,11 @@ CITIZENSHIP_NORMALIZATION = {
     "undocumented": "undocumented",
     "unauthorized": "undocumented",
     "no status": "undocumented",
+    "declined": None,
+    "prefer not to say": None,
+    "rather not say": None,
+    "none": None,
+    "n/a": None,
 }
 
 STATE_NAME_MAP = {
@@ -60,19 +64,16 @@ def _coerce_number(val, field: str, min_val: float = 0, max_val: float = None) -
 
 
 def _normalize_state(state) -> str:
-    """Normalize state to 2-letter code.
-
-    For unsupported states, falls back to FEDERAL_FALLBACK_STATE so the intake
-    prompt's promise ("we'll use federal thresholds") is honored rather than
-    raising an error. The original state string is preserved in 'state_original'
-    by the caller so downstream agents can disclose the fallback to the user.
-    """
+    """Normalize state to 2-letter code. Raises on unrecognized or unsupported input."""
     if not state:
         raise ProfileValidationError("'state' is required")
     s = str(state).strip().upper()
     s = STATE_NAME_MAP.get(s, s)
     if s not in SUPPORTED_STATES:
-        return FEDERAL_FALLBACK_STATE
+        raise ProfileValidationError(
+            f"Unrecognized or unsupported state: '{state}'. "
+            "Please confirm the state — AidRadar covers California (CA), Texas (TX), New York (NY), and Florida (FL)."
+        )
     return s
 
 
@@ -106,13 +107,16 @@ def validate_profile(profile: dict) -> dict:
 
     cleaned = dict(profile)
 
-    # State — preserve original so agents can disclose out-of-area fallback
-    raw_state = str(profile.get("state", "")).strip().upper()
-    raw_state = STATE_NAME_MAP.get(raw_state, raw_state)
+    # State — must be a recognized supported state, no fallback
     cleaned["state"] = _normalize_state(profile.get("state"))
-    if raw_state not in SUPPORTED_STATES and raw_state:
-        cleaned["state_original"] = raw_state
-        cleaned["state_is_fallback"] = True
+
+    # Household size — must be a positive integer, capped at 20
+    raw_size = profile.get("household_size", 1)
+    try:
+        household_size = max(1, min(20, int(float(str(raw_size)))))
+    except (ValueError, TypeError):
+        household_size = 1
+    cleaned["household_size"] = household_size
 
     # Income
     cleaned["monthly_income"] = _coerce_number(
@@ -190,11 +194,18 @@ def validate_profile(profile: dict) -> dict:
     citizenship = profile.get("citizenship_status")
     if citizenship is not None:
         normalized = str(citizenship).strip().lower()
-        citizenship = CITIZENSHIP_NORMALIZATION.get(normalized, normalized.replace(" ", "_"))
-        if citizenship not in CITIZENSHIP_VALUES:
-            # Default to qualified_immigrant (broadest eligible non-citizen category) rather than
-            # us_citizen — avoids falsely granting full citizen eligibility to DACA/refugee/TPS holders.
-            citizenship = "qualified_immigrant"
+        _sentinel = object()
+        mapped = CITIZENSHIP_NORMALIZATION.get(normalized, _sentinel)
+        if mapped is _sentinel:
+            # Not in map — coerce to snake_case and check against valid values
+            citizenship = normalized.replace(" ", "_")
+            if citizenship not in CITIZENSHIP_VALUES:
+                citizenship = "qualified_immigrant"
+        else:
+            # Explicitly mapped — None means user declined, canonical values pass through
+            citizenship = mapped
+    # None is a valid value here — means user declined to answer.
+    # eligibility_checker.py coerces None → "qualified_immigrant" at its boundary.
     cleaned["citizenship_status"] = citizenship
 
     # Scrub PII from all string fields

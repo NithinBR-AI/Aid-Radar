@@ -14,11 +14,16 @@ import copy
 import json
 import logging
 import re
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import dataclass, field
 
 from src.agents import create_eligibility_agent, create_recommendation_agent
+from src.config import FALLBACK_MODEL_IDS, create_mantle_model
 from src.db.profile_store import save_profile
+from src.models.eligibility_output import parse_eligibility_output
+from src.tools.application_finder import application_finder
+from src.tools.cliff_effect import estimate_cliff_effect
 from src.tools.eligibility_checker import eligibility_checker
 from src.guardrails.profile_validator import ProfileValidationError, validate_profile
 
@@ -30,19 +35,57 @@ logger = logging.getLogger(__name__)
 _AGENT_TIMEOUT_SECONDS = 120
 
 
-def _call_agent_with_timeout(agent, prompt: str, timeout: int = _AGENT_TIMEOUT_SECONDS) -> str:
-    """Call a Strands agent with a wall-clock timeout.
+_MANTLE_RETRY_CODES = {429, 503, 502, 500}
+_MANTLE_RETRIES = 2
+_MANTLE_RETRY_DELAY = 2  # seconds; doubles on each attempt
+_FALLBACK_TRIGGER_CODES = {503, 502}  # persistent unavailability → try next model
 
-    Returns the agent's string output, or raises TimeoutError if it exceeds the limit.
-    Uses a thread so the main thread can enforce the deadline — Strands has no native timeout.
+
+def _call_agent_with_timeout(agent, prompt: str, timeout: int = _AGENT_TIMEOUT_SECONDS,
+                              _fallback_index: int = 0, _agent_tools: list | None = None) -> str:
+    """Call a Strands agent with a wall-clock timeout, retry, and model fallback.
+
+    On 503/502 after retries, swaps to the next model in FALLBACK_MODEL_IDS and
+    rebuilds the agent with that model. Falls through the fallback chain before
+    raising. 429/500 retry on same model first.
     """
-    with ThreadPoolExecutor(max_workers=1) as executor:
-        future = executor.submit(agent, prompt)
-        try:
-            return str(future.result(timeout=timeout))
-        except FuturesTimeoutError:
-            future.cancel()
-            raise TimeoutError(f"Agent call exceeded {timeout}s timeout")
+    last_error = None
+    for attempt in range(1 + _MANTLE_RETRIES):
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(agent, prompt)
+            try:
+                return str(future.result(timeout=timeout))
+            except FuturesTimeoutError:
+                future.cancel()
+                raise TimeoutError(f"Agent call exceeded {timeout}s timeout")
+            except Exception as e:
+                last_error = e
+                status = getattr(getattr(e, "response", None), "status_code", None)
+                if status in _MANTLE_RETRY_CODES and attempt < _MANTLE_RETRIES:
+                    delay = _MANTLE_RETRY_DELAY * (2 ** attempt)
+                    logger.warning("_call_agent_with_timeout retrying attempt=%d status=%s delay=%ds", attempt + 1, status, delay)
+                    time.sleep(delay)
+                    continue
+                break
+
+    # Try next fallback model if primary/previous fallback returned persistent 5xx
+    status = getattr(getattr(last_error, "response", None), "status_code", None)
+    if status in _FALLBACK_TRIGGER_CODES and _fallback_index < len(FALLBACK_MODEL_IDS):
+        fallback_model_id = FALLBACK_MODEL_IDS[_fallback_index]
+        logger.warning("_call_agent_with_timeout switching to fallback model=%s", fallback_model_id)
+        fallback_model = create_mantle_model(model_id=fallback_model_id)
+        from strands import Agent
+        # Use the explicitly passed tools list — agent.tool_registry is internal Strands API.
+        # Callers pass _agent_tools at the call site so fallback preserves the same tools.
+        tools = _agent_tools if _agent_tools is not None else []
+        fallback_agent = Agent(
+            model=fallback_model,
+            system_prompt=agent.system_prompt,
+            tools=tools,
+        )
+        return _call_agent_with_timeout(fallback_agent, prompt, timeout, _fallback_index + 1, _agent_tools=tools)
+
+    raise last_error
 
 
 @dataclass
@@ -52,12 +95,16 @@ class PipelineResult:
     programs: dict = field(default_factory=dict)
     profile_id: str | None = None
     error: str | None = None
-    state_is_fallback: bool = False
-    state_original: str | None = None
+    error_programs: list = field(default_factory=list)
 
     @property
     def success(self) -> bool:
         return self.error is None
+
+    @property
+    def monitoring_active(self) -> bool:
+        """True if the profile was saved successfully and Monitor Agent can track changes."""
+        return self.profile_id is not None
 
 
 def extract_json_profile(text: str) -> dict | None:
@@ -192,24 +239,24 @@ def run_pipeline(intake_profile: dict) -> PipelineResult:
             error=f"validation_error:{e}",
         )
 
-    # Check if state was out-of-supported-area and fell back to federal thresholds.
-    # validate_profile is idempotent — this second call is cheap and lets us surface
-    # the fallback flag to the UI without threading it through build_eligibility_profile.
-    state_is_fallback = False
-    state_original = None
-    try:
-        _validated = validate_profile(eligibility_profile)
-        state_is_fallback = _validated.get("state_is_fallback", False)
-        state_original = _validated.get("state_original")
-    except ProfileValidationError:
-        pass
+    # Warn if children were expected but none mapped through (silent schema mismatch)
+    if eligibility_profile.get("household_size", 1) > len(eligibility_profile.get("adults", [])) and not eligibility_profile.get("children"):
+        logger.warning(
+            "run_pipeline household_size=%d adults=%d children=0 — children may have been dropped during profile conversion",
+            eligibility_profile.get("household_size", 1),
+            len(eligibility_profile.get("adults", [])),
+        )
 
     # Step 1: PolicyEngine — direct call, authoritative result
     programs: dict = {}
     error_programs: list = []
     profile_id: str | None = None
+    _t_pipeline_start = time.perf_counter()
 
+    _t0 = time.perf_counter()
     raw = eligibility_checker(json.dumps(eligibility_profile))
+    logger.info('{"stage":"policy_engine","duration_ms":%d,"status":"%s"}',
+                int((time.perf_counter() - _t0) * 1000), raw.get("status", "unknown"))
     if raw.get("status") == "success":
         programs = raw["content"][0]["json"]["programs"]
         error_programs = [pid for pid, r in programs.items() if r.get("eligible") is None]
@@ -220,6 +267,7 @@ def run_pipeline(intake_profile: dict) -> PipelineResult:
             logger.info("run_pipeline profile_saved profile_id=%s", profile_id)
         except Exception as e:
             logger.error("run_pipeline save_profile_failed error=%s", e)
+            # profile_id stays None — PipelineResult.monitoring_active will be False
     else:
         logger.error("run_pipeline eligibility_checker_failed status=%s", raw.get("status"))
 
@@ -241,9 +289,21 @@ def run_pipeline(intake_profile: dict) -> PipelineResult:
         "Now call application_finder for each eligible program, identify cascading eligibility, "
         f"and build the structured output for the Recommendation Agent.{error_note}"
     )
+    _t1 = time.perf_counter()
     try:
-        eligibility_text = _call_agent_with_timeout(agent, eligibility_prompt)
-        logger.info("run_pipeline eligibility_agent_complete")
+        eligibility_text = _call_agent_with_timeout(agent, eligibility_prompt, _agent_tools=[application_finder])
+        parsed = parse_eligibility_output(eligibility_text)
+        if parsed is None:
+            logger.error("run_pipeline eligibility_agent_output failed schema validation — aborting pipeline")
+            return PipelineResult(
+                eligibility_text=eligibility_text,
+                report_text="",
+                programs=programs,
+                profile_id=profile_id,
+                error="The eligibility agent returned malformed output. Please try again.",
+            )
+        logger.info('{"stage":"eligibility_agent","duration_ms":%d,"schema_valid":true}',
+                    int((time.perf_counter() - _t1) * 1000))
     except TimeoutError:
         logger.error("run_pipeline eligibility_agent_timeout exceeded=%ds", _AGENT_TIMEOUT_SECONDS)
         return PipelineResult(
@@ -256,19 +316,31 @@ def run_pipeline(intake_profile: dict) -> PipelineResult:
 
     # Step 3: Recommendation Agent — receives raw programs dict and eligibility_profile
     # so it can call estimate_cliff_effect with the correct income and profile data.
+    # Build a lean program summary for the recommendation prompt — only the fields
+    # the Recommendation Agent actually needs (eligibility, benefit, cliff context).
+    # Avoids re-sending the full eligibility_profile JSON that the Eligibility Agent already processed.
+    program_summary = {
+        pid: {
+            "eligible": r.get("eligible"),
+            "estimated_benefit": r.get("estimated_benefit") or r.get("details"),
+            "display_name": r.get("display_name"),
+        }
+        for pid, r in programs.items()
+    }
+
     rec_agent = create_recommendation_agent()
     rec_prompt = (
-        "Here is the household profile, eligibility results, and the full eligibility profile "
-        "JSON (pass this to estimate_cliff_effect if you call it). "
         "Generate the full benefits report following your instructions.\n\n"
         f"**Household Profile:**\n```json\n{json.dumps(intake_profile, indent=2)}\n```\n\n"
-        f"**Eligibility Profile (for estimate_cliff_effect):**\n```json\n{json.dumps(eligibility_profile, indent=2)}\n```\n\n"
+        f"**Eligibility Profile (pass this JSON string to estimate_cliff_effect):**\n```json\n{json.dumps(eligibility_profile, indent=2)}\n```\n\n"
         f"**Eligibility Agent Results:**\n{eligibility_text}\n\n"
-        f"**Raw Programs (for cliff effect context):**\n```json\n{json.dumps(programs, indent=2)}\n```"
+        f"**Program Summary (eligibility + benefit amounts):**\n```json\n{json.dumps(program_summary, indent=2)}\n```"
     )
+    _t2 = time.perf_counter()
     try:
-        report_text = _call_agent_with_timeout(rec_agent, rec_prompt)
-        logger.info("run_pipeline recommendation_agent_complete")
+        report_text = _call_agent_with_timeout(rec_agent, rec_prompt, _agent_tools=[estimate_cliff_effect])
+        logger.info('{"stage":"recommendation_agent","duration_ms":%d}',
+                    int((time.perf_counter() - _t2) * 1000))
     except TimeoutError:
         logger.error("run_pipeline recommendation_agent_timeout exceeded=%ds", _AGENT_TIMEOUT_SECONDS)
         return PipelineResult(
@@ -279,13 +351,16 @@ def run_pipeline(intake_profile: dict) -> PipelineResult:
             error=f"The recommendation agent timed out after {_AGENT_TIMEOUT_SECONDS} seconds. Please try again.",
         )
 
+    eligible_count = len([p for p in programs.values() if p.get("eligible")])
+    logger.info('{"stage":"pipeline_total","duration_ms":%d,"profile_id":"%s","eligible_count":%d}',
+                int((time.perf_counter() - _t_pipeline_start) * 1000), profile_id or "none", eligible_count)
+
     return PipelineResult(
         eligibility_text=eligibility_text,
         report_text=report_text,
         programs=programs,
         profile_id=profile_id,
-        state_is_fallback=state_is_fallback,
-        state_original=state_original,
+        error_programs=error_programs,
     )
 
 

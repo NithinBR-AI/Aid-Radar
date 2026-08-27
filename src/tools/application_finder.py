@@ -31,7 +31,10 @@ _DATA_DIR = Path(__file__).parent.parent / "data"
 
 def _load_program(program_id: str) -> dict:
     path = _DATA_DIR / "programs" / f"{program_id}.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        raise FileNotFoundError(f"Could not load program data for '{program_id}': {e}") from e
 
 
 @tool(

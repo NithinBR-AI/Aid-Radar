@@ -23,6 +23,7 @@ def test_lost_when_no_longer_eligible():
 
 
 def test_changed_when_amount_differs_significantly():
+    # $300 → $400 = 33% change, well above 10% threshold
     prev = {"snap": {**SNAP, "estimated_benefit": {"monthly": 300}}}
     curr = {"snap": {**SNAP, "estimated_benefit": {"monthly": 400}}}
     gained, lost, changed = _diff_snapshots(prev, curr)
@@ -44,6 +45,7 @@ def test_no_change_when_amounts_same():
 
 
 def test_small_amount_change_ignored():
+    # $300 → $303 = 1% change, below 10% threshold
     prev = {"snap": {**SNAP, "estimated_benefit": {"monthly": 300}}}
     curr = {"snap": {**SNAP, "estimated_benefit": {"monthly": 303}}}
     _, _, changed = _diff_snapshots(prev, curr)
@@ -69,3 +71,19 @@ def test_both_ineligible_no_change():
     curr = {"snap": {**SNAP, "eligible": False}}
     gained, lost, changed = _diff_snapshots(prev, curr)
     assert not gained and not lost and not changed
+
+
+def test_exactly_threshold_change_ignored():
+    # $300 → $330 = exactly 10% — must NOT trigger (threshold is strictly > 10%)
+    prev = {"snap": {**SNAP, "estimated_benefit": {"monthly": 300}}}
+    curr = {"snap": {**SNAP, "estimated_benefit": {"monthly": 330}}}
+    _, _, changed = _diff_snapshots(prev, curr)
+    assert not changed
+
+
+def test_one_above_threshold_triggers():
+    # $300 → $331 = 10.33% — must trigger
+    prev = {"snap": {**SNAP, "estimated_benefit": {"monthly": 300}}}
+    curr = {"snap": {**SNAP, "estimated_benefit": {"monthly": 331}}}
+    _, _, changed = _diff_snapshots(prev, curr)
+    assert len(changed) == 1

@@ -24,11 +24,11 @@ def test_invalid_profile_returns_error():
     assert result["status"] == "error"
 
 
-def test_out_of_state_returns_success_with_fallback():
-    # OH is not a supported state but now falls back to federal thresholds (CA) — not an error
+def test_out_of_state_returns_error():
+    # Unsupported states now raise ProfileValidationError — no silent fallback
     oh = json.dumps({"state": "OH", "monthly_income": 2000, "adults": [{"age": 30, "income": 0}], "children": []})
     result = eligibility_checker(oh)
-    assert result["status"] == "success"
+    assert result["status"] == "error"
 
 
 def test_validate_profile_called_before_simulation():

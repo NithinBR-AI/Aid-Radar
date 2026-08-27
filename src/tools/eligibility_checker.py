@@ -13,14 +13,16 @@ Usage by agents:
 - Monitor Agent calls this when re-evaluating saved profiles
 """
 
+import datetime
 import logging
 
 from policyengine_us import Simulation
 
 from strands import tool
 
-logger = logging.getLogger(__name__)
 from src.guardrails.profile_validator import validate_profile, ProfileValidationError
+
+logger = logging.getLogger(__name__)
 
 PROGRAM_VARIABLES = {
     "snap": {
@@ -77,8 +79,16 @@ PROGRAM_VARIABLES = {
 # Federal Poverty Level base figures — updated annually by HHS each January.
 # Source: 2024 HHS Poverty Guidelines (https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines)
 # Update these values each year when HHS publishes new guidelines.
-FPL_BASE = 15_650          # 1-person household annual FPL
-FPL_PER_ADDITIONAL = 5_380  # increment per additional household member
+LIHEAP_FPL_YEAR = 2024  # update each January when HHS publishes new guidelines
+FPL_BASE = 15_650          # 1-person household annual FPL (2024 HHS)
+FPL_PER_ADDITIONAL = 5_380  # increment per additional household member (2024 HHS)
+
+if datetime.date.today().year > LIHEAP_FPL_YEAR:
+    logger.warning(
+        "LIHEAP FPL constants are from %d — update FPL_BASE and FPL_PER_ADDITIONAL for %d",
+        LIHEAP_FPL_YEAR,
+        datetime.date.today().year,
+    )
 
 LIHEAP_FPL_THRESHOLD = {
     # State-specific LIHEAP income limits as % of FPL.
@@ -93,7 +103,7 @@ LIHEAP_DEFAULT_THRESHOLD = 150
 
 def _build_situation(profile: dict) -> dict:
     """Convert an AidRadar household profile into a PolicyEngine situation dict."""
-    year = "2026"
+    year = str(datetime.date.today().year)
     people = {}
     member_names = []
 
@@ -232,8 +242,8 @@ def _check_liheap(profile: dict) -> dict:
 @tool(
     name="eligibility_checker",
     description=(
-        "Evaluates a household profile against all 8 supported benefit programs "
-        "(SNAP, Medicaid, WIC, TANF, SSI, Lifeline, Free School Meals, LIHEAP). "
+        "Evaluates a household profile against all 9 supported benefit programs "
+        "(SNAP, Medicaid, WIC, TANF, SSI, Lifeline, Free School Meals, LIHEAP, ACA/CHIP). "
         "Uses PolicyEngine for 7 programs and a fallback FPL check for LIHEAP. "
         "Returns eligibility status and estimated benefit amounts for each program."
     ),
@@ -311,7 +321,7 @@ def eligibility_checker(profile_json: str) -> dict:
 
     results["liheap"] = _check_liheap(profile)
 
-    citizenship = profile.get("citizenship_status", "us_citizen")
+    citizenship = profile.get("citizenship_status") or "qualified_immigrant"
     CITIZENSHIP_RESTRICTED = {"snap", "medicaid", "tanf", "ssi", "liheap"}
     if citizenship == "undocumented":
         for pid in CITIZENSHIP_RESTRICTED:

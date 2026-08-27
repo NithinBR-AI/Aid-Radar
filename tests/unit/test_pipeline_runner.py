@@ -3,6 +3,17 @@ from unittest.mock import patch, MagicMock, call
 
 from src.pipeline.runner import extract_json_profile, build_eligibility_profile, run_whatif, run_pipeline
 
+# Minimal valid EligibilityOutput JSON that passes parse_eligibility_output
+_VALID_ELIGIBILITY_OUTPUT = json.dumps({
+    "household_summary": {"state": "CA", "household_size": 3, "monthly_income": 2000},
+    "eligible_programs": [{"program_id": "snap", "program_name": "SNAP", "eligible": True,
+                           "required_documents": [], "cascading_benefits": []}],
+    "ineligible_programs": [],
+    "error_programs": [],
+    "total_estimated_monthly_benefit": 300.0,
+    "total_estimated_annual_benefit": 3600.0,
+})
+
 INTAKE_PROFILE = {
     "state": "CA",
     "household_size": 3,
@@ -100,7 +111,7 @@ def _make_agent(output: str):
 
 
 def test_run_pipeline_returns_success():
-    mock_elig = _make_agent("eligibility output")
+    mock_elig = _make_agent(_VALID_ELIGIBILITY_OUTPUT)
     mock_rec = _make_agent("report output")
     with patch(_EC, return_value=_EC_SUCCESS), \
          patch(_SP, return_value="pid-1"), \
@@ -114,7 +125,7 @@ def test_run_pipeline_returns_success():
 
 def test_run_pipeline_rec_prompt_contains_eligibility_profile_json():
     """Recommendation Agent must receive the eligibility_profile JSON so it can call estimate_cliff_effect."""
-    mock_elig = _make_agent("eligibility output")
+    mock_elig = _make_agent(_VALID_ELIGIBILITY_OUTPUT)
     mock_rec = _make_agent("report output")
     with patch(_EC, return_value=_EC_SUCCESS), \
          patch(_SP, return_value="pid-1"), \
@@ -127,7 +138,7 @@ def test_run_pipeline_rec_prompt_contains_eligibility_profile_json():
 
 
 def test_run_pipeline_eligibility_checker_failure_returns_empty_programs():
-    mock_elig = _make_agent("eligibility output")
+    mock_elig = _make_agent(_VALID_ELIGIBILITY_OUTPUT)
     mock_rec = _make_agent("report output")
     with patch(_EC, return_value={"status": "error"}), \
          patch(_SP, return_value=None), \
