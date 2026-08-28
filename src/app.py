@@ -361,6 +361,10 @@ if "wi_reset_counter" not in st.session_state:
     st.session_state.wi_reset_counter = 0
 if "error_programs" not in st.session_state:
     st.session_state.error_programs = []
+if "correction_mode" not in st.session_state:
+    st.session_state.correction_mode = False
+if "is_correction_session" not in st.session_state:
+    st.session_state.is_correction_session = False
 
 
 # ---------------------------------------------------------------------------
@@ -485,11 +489,37 @@ def show_intake():
 
     st.markdown('<h3 style="font-family:\'Sora\',sans-serif;color:#1B3A5C;letter-spacing:-0.02em;margin-bottom:0.2rem;">Tell us about your household</h3>', unsafe_allow_html=True)
 
-    # Progress indicator — count non-greeting assistant messages as answered questions
-    answered = max(0, sum(1 for m in st.session_state.messages if m["role"] == "user"))
-    total_questions = 10
-    pct = min(answered / total_questions, 1.0)
-    st.progress(pct, text=f"Question {min(answered + 1, total_questions)} of {total_questions}")
+    # Correction mode: user came back from the confirmation screen to fix something.
+    # Kick off a fresh agent pre-loaded with the existing profile so they only need
+    # to say what changed — not re-answer all 10 questions.
+    if st.session_state.get("correction_mode") and not st.session_state.messages:
+        existing = st.session_state.get("profile") or {}
+        import json as _json
+        correction_seed = (
+            "SYSTEM NOTE (not shown to user): The user reviewed their profile and wants to correct something. "
+            "Here is the profile we captured so far:\n"
+            f"{_json.dumps(existing, indent=2)}\n\n"
+            "Ask the user ONE question: 'Which part of your profile would you like to correct? '  "
+            "Once they tell you what to fix, ask only the follow-up questions needed to update that field. "
+            "When everything is corrected, output the full updated profile JSON block as usual."
+        )
+        st.session_state.intake_agent = create_intake_agent()
+        with st.spinner("Loading your profile for correction..."):
+            result = st.session_state.intake_agent(correction_seed)
+        agent_text = str(result)
+        st.session_state.messages.append({"role": "assistant", "content": agent_text})
+        st.session_state.correction_mode = False
+        st.session_state.is_correction_session = True
+        st.rerun()
+
+    # Progress indicator
+    if st.session_state.get("is_correction_session"):
+        st.caption("✏️ Correcting your profile — tell us what to fix")
+    else:
+        answered = max(0, sum(1 for m in st.session_state.messages if m["role"] == "user"))
+        total_questions = 10
+        pct = min(answered / total_questions, 1.0)
+        st.progress(pct, text=f"Question {min(answered + 1, total_questions)} of {total_questions}")
 
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -506,9 +536,11 @@ def show_intake():
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # On the very first user message (state answer), prepend context so the
-                # agent doesn't re-greet or skip household_size.
-                if sum(1 for m in st.session_state.messages if m["role"] == "user") == 1:
+                # On the very first user message in a normal intake (state answer), prepend context
+                # so the agent doesn't re-greet or skip household_size.
+                # Skip this priming in correction mode — the agent already has context.
+                user_count = sum(1 for m in st.session_state.messages if m["role"] == "user")
+                if user_count == 1 and not st.session_state.get("is_correction_session"):
                     primed_input = (
                         "SYSTEM NOTE (not from user): You already greeted the user and asked "
                         "what state they live in. Their answer follows. Do NOT re-greet. "
@@ -602,7 +634,9 @@ def show_confirm_profile():
     with col_back:
         if st.button("← Something's wrong — go back", use_container_width=True):
             st.session_state.stage = "intake"
-            st.session_state.profile = None
+            st.session_state.correction_mode = True
+            st.session_state.intake_agent = None
+            st.session_state.messages = []
             st.rerun()
 
 
@@ -646,8 +680,8 @@ def show_processing():
         st.rerun()
 
     except Exception as e:
-        status.update(label="Pipeline error", state="error", expanded=True)
-        status.write(f"Something went wrong: {e}")
+        logger.error("show_processing pipeline_error error=%s", e)
+        status.update(label="Pipeline error", state="error", expanded=False)
         st.error(
             "The eligibility check failed — this is usually a temporary issue with the AI model. "
             "Click below to try again."
@@ -658,7 +692,7 @@ def show_processing():
             for key in ["stage", "messages", "intake_agent", "profile", "eligibility_results",
                         "report", "monitor_notifications", "whatif_results", "baseline_programs",
                         "profile_id", "error_programs", "notification_saved", "notification_value",
-                        "notification_channel", "wi_reset_counter"]:
+                        "notification_channel", "wi_reset_counter", "correction_mode", "is_correction_session"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
@@ -709,8 +743,12 @@ def _show_whatif_section(base_profile: dict, original_programs: dict):
         if changed:
             if st.button("Recalculate Eligibility", type="primary", use_container_width=True, key="wi_calc"):
                 with st.spinner("Running eligibility check..."):
-                    st.session_state.whatif_results = run_whatif(base_profile, wi_income, wi_adults, wi_children)
-                st.rerun()
+                    result = run_whatif(base_profile, wi_income, wi_adults, wi_children)
+                if not result:
+                    st.error("Could not calculate eligibility for this scenario — please try different values.")
+                else:
+                    st.session_state.whatif_results = result
+                    st.rerun()
         else:
             st.caption("Adjust the sliders above to explore different scenarios.")
     with col_reset:
@@ -1029,6 +1067,7 @@ def _build_pdf_report(profile: dict, eligibility_data: dict, report_text: str) -
 # Results dashboard
 # ---------------------------------------------------------------------------
 def _parse_eligibility_json(text: str) -> dict | None:
+    # Try fenced blocks first
     pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
     matches = re.findall(pattern, text, re.DOTALL)
     for match in matches:
@@ -1038,6 +1077,13 @@ def _parse_eligibility_json(text: str) -> dict | None:
                 return data
         except json.JSONDecodeError:
             continue
+    # Fallback: plain JSON string (e.g. from model_dump_json())
+    try:
+        data = json.loads(text)
+        if isinstance(data, dict) and ("eligible_programs" in data or "programs" in data):
+            return data
+    except (json.JSONDecodeError, TypeError):
+        pass
     return None
 
 
@@ -1065,7 +1111,7 @@ def show_results():
                             "eligibility_results", "report", "monitor_notifications",
                             "whatif_results", "baseline_programs", "profile_id",
                             "error_programs", "notification_saved", "notification_value",
-                            "notification_channel", "wi_reset_counter"]:
+                            "notification_channel", "wi_reset_counter", "correction_mode", "is_correction_session"]:
                     if key in st.session_state:
                         del st.session_state[key]
                 st.rerun()
@@ -1077,11 +1123,19 @@ def show_results():
         total_annual = eligibility_data.get("total_estimated_annual_benefit", 0)
         eligible_count = len(eligibility_data.get("eligible_programs", []))
 
+        if total_monthly and total_monthly > 0:
+            hero_value = f"${total_monthly:,.0f}/month"
+            hero_sub = f"${total_annual:,.0f}/year across {eligible_count} program{'s' if eligible_count != 1 else ''}"
+        else:
+            prog_word = "program" if eligible_count == 1 else "programs"
+            hero_value = f"{eligible_count} {prog_word}"
+            hero_sub = "Coverage benefits — apply to confirm amounts"
+
         st.markdown(f"""
         <div class="big-number">
             <div class="label">You may be eligible for</div>
-            <div class="value">${total_monthly:,.0f}/month</div>
-            <div class="sub">${total_annual:,.0f}/year across {eligible_count} programs</div>
+            <div class="value">{hero_value}</div>
+            <div class="sub">{hero_sub}</div>
         </div>
         """, unsafe_allow_html=True)
         st.caption("Estimates based on PolicyEngine microsimulation — verify eligibility with the program office before applying.")
@@ -1210,7 +1264,7 @@ def show_results():
             for key in ["stage", "messages", "intake_agent", "profile",
                         "eligibility_results", "report", "monitor_notifications", "whatif_results",
                         "baseline_programs", "profile_id", "error_programs", "notification_saved",
-                        "notification_value", "notification_channel"]:
+                        "notification_value", "notification_channel", "correction_mode", "is_correction_session"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()

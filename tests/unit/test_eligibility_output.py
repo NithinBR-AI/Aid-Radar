@@ -77,3 +77,13 @@ def test_none_benefit_fields_valid():
     result = parse_eligibility_output(json.dumps(data))
     assert result is not None
     assert result.eligible_programs[0].estimated_monthly_benefit is None
+
+
+def test_valid_json_buried_after_other_json_objects():
+    """Parser must find the eligibility JSON even when other JSON objects appear earlier in the text."""
+    other_json = json.dumps({"tool_call": "application_finder", "program": "snap"})
+    eligibility_json = json.dumps(VALID_OUTPUT)
+    text = f"Called application_finder: {other_json}\n\nHere is the result:\n{eligibility_json}"
+    result = parse_eligibility_output(text)
+    assert result is not None
+    assert result.household_summary.state == "CA"

@@ -10,3 +10,8 @@ requires-python = ">=3.11"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["src*", "evals*"]
+
+[tool.pytest.ini_options]
+filterwarnings = [
+    "ignore:invalid value encountered in divide:RuntimeWarning",
+]

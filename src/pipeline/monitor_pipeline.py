@@ -86,8 +86,9 @@ def run_monitor_check(
         )
 
     try:
-        validate_profile(intake_profile)
-    except ProfileValidationError as e:
+        converted = build_eligibility_profile(intake_profile)
+        validate_profile(converted)
+    except (ValueError, ProfileValidationError) as e:
         return MonitorResult(
             original_income=int(intake_profile.get("monthly_income") or 0),
             new_income=int(intake_profile.get("monthly_income") or 0),

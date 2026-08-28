@@ -169,7 +169,7 @@ aid-radar/
 │       ├── programs/               # Per-program JSON (URLs, documents, state overrides)
 │       └── policy_changelog.json   # Curated log of federal/state rule changes (used by check_policy_change)
 ├── tests/
-│   ├── unit/                       # 113 unit tests — all dependencies mocked
+│   ├── unit/                       # 115 unit tests — all dependencies mocked
 │   │   ├── test_profile_validator.py
 │   │   ├── test_profile_validator_extended.py
 │   │   ├── test_eligibility_checker.py
@@ -178,7 +178,7 @@ aid-radar/
 │   │   ├── test_pipeline_runner.py
 │   │   ├── test_monitor_pipeline.py
 │   │   └── test_monitor_pipeline_extended.py
-│   └── integration/                # 12 integration tests — real PolicyEngine + real DynamoDB
+│   └── integration/                # 16 integration tests — real PolicyEngine + real DynamoDB
 │       ├── test_eligibility_integration.py
 │       └── test_profile_store_integration.py
 ├── evals/
@@ -194,7 +194,7 @@ aid-radar/
 
 AidRadar has three testing layers: unit tests, integration tests, and evals. Each layer serves a different purpose.
 
-### Unit Tests — 113 tests, no external dependencies
+### Unit Tests — 115 tests, no external dependencies
 
 All unit tests mock LLM calls, DynamoDB, and PolicyEngine. They run offline in under 10 seconds.
 
@@ -231,7 +231,7 @@ Coverage on the testable logic modules (entrypoints and UI are excluded by desig
 
 > `app.py`, `main.py`, and `monitor_runner.py` are UI and entrypoint files — they depend on a running browser, live LLM, or AWS environment and are excluded from unit coverage targets. This is standard practice.
 
-### Integration Tests — 15 tests, real PolicyEngine + real DynamoDB
+### Integration Tests — 16 tests, real PolicyEngine + real DynamoDB
 
 Integration tests hit the real PolicyEngine microsimulation engine (no mocks). DynamoDB tests auto-skip if AWS credentials are not available.
 
@@ -358,7 +358,7 @@ Models tested on Mantle:
 - Monitor Agent with real PolicyEngine diff
 - What If simulator for income/household exploration
 - Mock notification preference UI (email/SMS) with session state storage
-- 113 unit tests + 15 integration tests + 10-profile eval suite
+- 115 unit tests + 16 integration tests + 10-profile eval suite
 
 ### Stage 2 — Pilot Product
 - React/Next.js frontend — mobile-first, accessible on low-end devices and slow connections (the population most likely to need these benefits)

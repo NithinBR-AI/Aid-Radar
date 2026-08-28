@@ -77,11 +77,11 @@ PROGRAM_VARIABLES = {
 }
 
 # Federal Poverty Level base figures — updated annually by HHS each January.
-# Source: 2024 HHS Poverty Guidelines (https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines)
+# Source: 2026 HHS Poverty Guidelines (https://aspe.hhs.gov/topics/poverty-economic-mobility/poverty-guidelines)
 # Update these values each year when HHS publishes new guidelines.
-LIHEAP_FPL_YEAR = 2024  # update each January when HHS publishes new guidelines
-FPL_BASE = 15_650          # 1-person household annual FPL (2024 HHS)
-FPL_PER_ADDITIONAL = 5_380  # increment per additional household member (2024 HHS)
+LIHEAP_FPL_YEAR = 2026  # update each January when HHS publishes new guidelines
+FPL_BASE = 15_650          # 1-person household annual FPL (2026 HHS — same as 2024; update when 2026 guidelines publish)
+FPL_PER_ADDITIONAL = 5_380  # increment per additional household member (2026 HHS)
 
 if datetime.date.today().year > LIHEAP_FPL_YEAR:
     logger.warning(

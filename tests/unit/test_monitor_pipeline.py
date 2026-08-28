@@ -1,4 +1,5 @@
-from src.pipeline.monitor_pipeline import _diff_snapshots
+from unittest.mock import patch, MagicMock
+from src.pipeline.monitor_pipeline import _diff_snapshots, run_monitor_check
 
 SNAP = {"display_name": "SNAP", "eligible": True, "estimated_benefit": {"monthly": 300}}
 MEDICAID = {"display_name": "Medicaid", "eligible": True, "estimated_benefit": None}
@@ -87,3 +88,46 @@ def test_one_above_threshold_triggers():
     curr = {"snap": {**SNAP, "estimated_benefit": {"monthly": 331}}}
     _, _, changed = _diff_snapshots(prev, curr)
     assert len(changed) == 1
+
+
+# ---------------------------------------------------------------------------
+# run_monitor_check — intake-schema profile validation
+# ---------------------------------------------------------------------------
+
+INTAKE_SCHEMA_PROFILE = {
+    "state": "TX",
+    "household_size": 5,
+    "monthly_income": 8000,
+    "income_is_approximate": False,
+    "applicant_age": 36,
+    "elderly_count": 1,
+    "has_disabled_member": False,
+    "has_pregnant_member": False,
+    "children_under_5": [{"age": 2}],
+    "children_k12": [],
+    "veteran_in_household": False,
+    "current_programs": [],
+    "citizenship_status": None,
+}
+
+
+def test_run_monitor_check_accepts_intake_schema_profile():
+    """Intake-schema profiles (applicant_age + children_under_5, no adults list)
+    must not fail with 'Household must have at least 1 member' — build_eligibility_profile
+    converts them before validation."""
+    success_raw = {
+        "status": "success",
+        "content": [{"json": {"programs": {"snap": {"eligible": True, "display_name": "SNAP", "estimated_benefit": {"monthly": 300}}}}}],
+    }
+    with patch("src.pipeline.monitor_pipeline.get_profile") as mock_get, \
+         patch("src.pipeline.monitor_pipeline.was_recently_notified", return_value=False), \
+         patch("src.pipeline.monitor_pipeline.eligibility_checker", return_value=success_raw), \
+         patch("src.pipeline.monitor_pipeline.update_snapshot"), \
+         patch("src.pipeline.monitor_pipeline.create_monitor_agent", return_value=MagicMock()), \
+         patch("src.pipeline.monitor_pipeline._call_agent_with_timeout", return_value="No significant changes."):
+
+        baseline = {"snap": {"eligible": True, "display_name": "SNAP", "estimated_benefit": {"monthly": 300}}}
+        mock_get.return_value = None
+        result = run_monitor_check("fake-profile-id", INTAKE_SCHEMA_PROFILE, baseline)
+
+    assert result.error is None or "Household must have" not in (result.error or "")

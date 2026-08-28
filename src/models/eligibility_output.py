@@ -61,8 +61,11 @@ class EligibilityOutput(BaseModel):
 def parse_eligibility_output(text: str) -> EligibilityOutput | None:
     """Extract and validate EligibilityOutput from agent text.
 
-    Returns None if no valid JSON found or validation fails — callers must
-    handle None and fall back to passing raw eligibility_text downstream.
+    Tries every JSON object in the text and returns the first one that
+    validates against EligibilityOutput. This handles mixed prose+JSON
+    output where the schema object may not be the first brace found.
+
+    Returns None if no valid JSON found or validation fails.
     """
     import json
     import re
@@ -70,31 +73,40 @@ def parse_eligibility_output(text: str) -> EligibilityOutput | None:
 
     logger = logging.getLogger(__name__)
 
-    # Extract fenced JSON block
-    match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    raw = match.group(1) if match else None
-
-    if not raw:
-        # Fallback: find outermost balanced brace
-        start = text.find("{")
-        if start == -1:
-            return None
-        depth = 0
-        for i, ch in enumerate(text[start:], start=start):
-            if ch == "{":
-                depth += 1
-            elif ch == "}":
-                depth -= 1
-                if depth == 0:
-                    raw = text[start:i + 1]
-                    break
-
-    if not raw:
+    if not text:
         return None
 
-    try:
-        data = json.loads(raw)
-        return EligibilityOutput.model_validate(data)
-    except Exception as e:
-        logger.warning("parse_eligibility_output validation failed: %s", e)
-        return None
+    # Collect candidate JSON strings — fenced blocks first, then all balanced objects
+    candidates: list[str] = []
+
+    for m in re.finditer(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL):
+        candidates.append(m.group(1))
+
+    # Walk the full text and extract every top-level balanced JSON object
+    i = 0
+    while i < len(text):
+        if text[i] == "{":
+            depth = 0
+            for j in range(i, len(text)):
+                if text[j] == "{":
+                    depth += 1
+                elif text[j] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        candidates.append(text[i:j + 1])
+                        i = j
+                        break
+        i += 1
+
+    # Try each candidate — return first that validates as EligibilityOutput
+    for raw in candidates:
+        try:
+            data = json.loads(raw)
+            if not isinstance(data, dict) or "household_summary" not in data:
+                continue
+            return EligibilityOutput.model_validate(data)
+        except Exception:
+            continue
+
+    logger.warning("parse_eligibility_output: no valid EligibilityOutput found in %d chars", len(text))
+    return None
