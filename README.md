@@ -182,7 +182,7 @@ aid-radar/
 │       ├── test_eligibility_integration.py
 │       └── test_profile_store_integration.py
 ├── evals/
-│   └── evals.py                    # Eval suite — 5 household profiles × tool accuracy + agent quality
+│   └── evals.py                    # Eval suite — 10 household profiles × tool accuracy + agent quality
 ├── pyproject.toml
 ├── requirements.txt
 └── .env                            # MANTLE_API_KEY, MODEL_ID, AWS_REGION
@@ -231,7 +231,7 @@ Coverage on the testable logic modules (entrypoints and UI are excluded by desig
 
 > `app.py`, `main.py`, and `monitor_runner.py` are UI and entrypoint files — they depend on a running browser, live LLM, or AWS environment and are excluded from unit coverage targets. This is standard practice.
 
-### Integration Tests — 16 tests, real PolicyEngine + real DynamoDB
+### Integration Tests — 15 tests, real PolicyEngine + real DynamoDB
 
 Integration tests hit the real PolicyEngine microsimulation engine (no mocks). DynamoDB tests auto-skip if AWS credentials are not available.
 
@@ -249,9 +249,9 @@ pytest tests/integration/ -v
 | File | What it covers |
 |------|---------------|
 | `test_eligibility_integration.py` | CA family qualifies for SNAP, TX high-income does not, FL elderly Medicaid present, all 8 program keys always returned, veteran flag propagated |
-| `test_profile_store_integration.py` | Save profile returns ID, load returns saved data, snapshot included, update overwrites, nonexistent ID returns None, snapshot history appends and caps at 3 |
+| `test_profile_store_integration.py` | Save profile returns ID, load returns saved data, snapshot included, update overwrites, nonexistent ID returns None, snapshot history appends, caps at 3, history key present |
 
-### Evals — 5 household profiles
+### Evals — 10 household profiles
 
 The eval suite (`evals/evals.py`) tests end-to-end accuracy against known expected outcomes. Each profile has a ground-truth set of programs it should and should not qualify for.
 
@@ -326,7 +326,7 @@ python -m src.main
 # Run unit tests
 pytest tests/unit/ -v
 
-# Run evals (5 profiles × tool accuracy + agent quality checks)
+# Run evals (10 profiles × tool accuracy + agent quality checks)
 python -m evals.evals
 ```
 
@@ -358,7 +358,7 @@ Models tested on Mantle:
 - Monitor Agent with real PolicyEngine diff
 - What If simulator for income/household exploration
 - Mock notification preference UI (email/SMS) with session state storage
-- 113 unit tests + 12 integration tests + 10-profile eval suite
+- 113 unit tests + 15 integration tests + 10-profile eval suite
 
 ### Stage 2 — Pilot Product
 - React/Next.js frontend — mobile-first, accessible on low-end devices and slow connections (the population most likely to need these benefits)
