@@ -1073,14 +1073,14 @@ def _parse_eligibility_json(text: str) -> dict | None:
     for match in matches:
         try:
             data = json.loads(match)
-            if "eligible_programs" in data or "programs" in data:
+            if "eligible_programs" in data:
                 return data
         except json.JSONDecodeError:
             continue
     # Fallback: plain JSON string (e.g. from model_dump_json())
     try:
         data = json.loads(text)
-        if isinstance(data, dict) and ("eligible_programs" in data or "programs" in data):
+        if isinstance(data, dict) and "eligible_programs" in data:
             return data
     except (json.JSONDecodeError, TypeError):
         pass
