@@ -80,12 +80,12 @@ def _call_agent_with_timeout(agent, prompt: str, timeout: int = _AGENT_TIMEOUT_S
         tools = _agent_tools if _agent_tools is not None else []
         fallback_agent = Agent(
             model=fallback_model,
-            system_prompt=agent.system_prompt,
+            system_prompt=agent.system_prompt or "",
             tools=tools,
         )
         return _call_agent_with_timeout(fallback_agent, prompt, timeout, _fallback_index + 1, _agent_tools=tools)
 
-    raise last_error
+    raise last_error or RuntimeError("Agent call failed with no error detail")
 
 
 @dataclass
@@ -240,7 +240,7 @@ def run_pipeline(intake_profile: dict) -> PipelineResult:
         )
 
     # Warn if children were expected but none mapped through (silent schema mismatch)
-    if eligibility_profile.get("household_size", 1) > len(eligibility_profile.get("adults", [])) and not eligibility_profile.get("children"):
+    if intake_profile.get("household_size", 1) > len(eligibility_profile.get("adults", [])) and not eligibility_profile.get("children"):
         logger.warning(
             "run_pipeline household_size=%d adults=%d children=0 — children may have been dropped during profile conversion",
             eligibility_profile.get("household_size", 1),
@@ -366,19 +366,21 @@ def run_pipeline(intake_profile: dict) -> PipelineResult:
 
 def run_whatif(base_profile: dict, monthly_income: int, num_adults: int, num_children: int) -> dict:
     """Re-run eligibility_checker for a modified household. Returns programs dict."""
-    # Guard: PolicyEngine requires at least 1 adult — slider min should enforce this
-    # but we defend here too so a UI bug doesn't reach PolicyEngine.
     num_adults = max(1, num_adults)
     num_children = max(0, num_children)
 
-    p = copy.deepcopy(base_profile)
+    # Convert intake profile → eligibility profile first so children_under_5/children_k12
+    # are resolved into the children list that eligibility_checker._build_situation expects.
+    # Without this, intake profiles always produce children=[] silently.
+    try:
+        p = build_eligibility_profile(base_profile)
+    except (ValueError, ProfileValidationError):
+        p = copy.deepcopy(base_profile)
+
     p["monthly_income"] = monthly_income
 
     annual = monthly_income * 12
     existing_adults = p.get("adults", [])
-    # Simplification: all slider income is attributed to adult[0].
-    # For multi-income households this differs from the actual intake profile,
-    # but the What If simulator is an exploration tool, not a re-intake.
     p["adults"] = [
         {"age": existing_adults[i]["age"] if i < len(existing_adults) else 35,
          "income": annual if i == 0 else 0}

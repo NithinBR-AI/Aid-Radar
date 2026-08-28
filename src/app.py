@@ -656,7 +656,9 @@ def show_processing():
             st.rerun()
         if st.button("Start Over"):
             for key in ["stage", "messages", "intake_agent", "profile", "eligibility_results",
-                        "report", "monitor_notifications", "whatif_results", "baseline_programs", "profile_id"]:
+                        "report", "monitor_notifications", "whatif_results", "baseline_programs",
+                        "profile_id", "error_programs", "notification_saved", "notification_value",
+                        "notification_channel", "wi_reset_counter"]:
                 if key in st.session_state:
                     del st.session_state[key]
             st.rerun()
@@ -1060,7 +1062,10 @@ def show_results():
         with col1:
             if st.button("Start Over", use_container_width=True, key="fallback_start_over"):
                 for key in ["stage", "messages", "intake_agent", "profile",
-                            "eligibility_results", "report", "monitor_notifications"]:
+                            "eligibility_results", "report", "monitor_notifications",
+                            "whatif_results", "baseline_programs", "profile_id",
+                            "error_programs", "notification_saved", "notification_value",
+                            "notification_channel", "wi_reset_counter"]:
                     if key in st.session_state:
                         del st.session_state[key]
                 st.rerun()
@@ -1110,7 +1115,6 @@ def show_results():
                 monthly = prog.get("estimated_monthly_benefit")
                 url = prog.get("apply_url") or prog.get("application_url", "")
                 cascading = prog.get("cascading_benefits") or []
-                cliff_detected = prog.get("cliff_detected", False)
                 docs = prog.get("required_documents") or []
 
                 amount_html = f'<div class="amount">${monthly:,.2f}/mo</div>' if monthly else '<div style="font-size:0.9rem;color:#666;margin-top:0.4rem;">Coverage benefit — no $ estimate available</div>'
@@ -1126,13 +1130,6 @@ def show_results():
                 else:
                     cascade_html = ""
 
-                # Cliff alert inline
-                cliff_html = (
-                    '<div style="margin-top:0.6rem;background:#FFF8E1;border:1px solid #FFD54F;border-radius:6px;padding:0.3rem 0.6rem;font-size:0.8rem;color:#795548;">'
-                    '⚠️ Benefit cliff — a modest income increase could make you ineligible.'
-                    '</div>'
-                ) if cliff_detected else ""
-
                 st.markdown(f"""
                 <div class="benefit-card" style="border-left:4px solid #1B3A5C;">
                     <span class="eligible-badge">ELIGIBLE</span>
@@ -1140,7 +1137,6 @@ def show_results():
                     {amount_html}
                     {apply_html}
                     {cascade_html}
-                    {cliff_html}
                 </div>
                 """, unsafe_allow_html=True)
 
