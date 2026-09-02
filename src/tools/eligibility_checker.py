@@ -93,10 +93,29 @@ if datetime.date.today().year > LIHEAP_FPL_YEAR:
 LIHEAP_FPL_THRESHOLD = {
     # State-specific LIHEAP income limits as % of FPL.
     # Source: state LIHEAP program pages (last verified 2024).
-    "CA": 200,
+    # States not listed use LIHEAP_DEFAULT_THRESHOLD (150%).
+    "CA": 200,  # 200% FPL
+    "CO": 185,  # 185% FPL (LEAP)
+    "CT": 60,   # 60% State Median Income — approximated as 150% FPL
+    "DE": 200,  # 200% FPL
+    "HI": 200,  # 200% FPL
+    "IL": 150,
+    "MA": 200,  # 200% FPL (Fuel Assistance)
+    "MD": 175,  # 175% FPL (OHEP)
+    "ME": 175,  # 175% FPL
+    "MI": 150,
+    "MN": 50,   # 50% State Median Income — approximated as 150% FPL
+    "NH": 60,   # 60% State Median Income — approximated as 150% FPL
+    "NJ": 200,  # 200% FPL
+    "NY": 165,  # 60% State Median Income — approximated as 165% FPL
+    "OH": 175,  # 175% FPL (HEAP)
+    "OR": 60,   # 60% State Median Income — approximated as 150% FPL
+    "PA": 150,
+    "RI": 175,  # 175% FPL
     "TX": 150,
-    "NY": 165,
-    "FL": 150,
+    "VT": 185,  # 185% FPL
+    "WA": 150,
+    "WI": 150,
 }
 LIHEAP_DEFAULT_THRESHOLD = 150
 

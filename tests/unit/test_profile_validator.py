@@ -26,7 +26,7 @@ def test_state_normalized_full_name():
 
 
 def test_unsupported_state_raises():
-    p = {**VALID, "state": "OH"}
+    p = {**VALID, "state": "XX"}
     with pytest.raises(ProfileValidationError, match="Unrecognized or unsupported state"):
         validate_profile(p)
 
@@ -64,6 +64,39 @@ def test_pii_scrubbed_from_strings():
 def test_non_dict_raises():
     with pytest.raises(ProfileValidationError, match="JSON object"):
         validate_profile("not a dict")
+
+
+def test_all_50_states_accepted():
+    for code in [
+        "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA",
+        "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD",
+        "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+        "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC",
+        "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY",
+    ]:
+        p = {**VALID, "state": code}
+        assert validate_profile(p)["state"] == code, f"State {code} should be accepted"
+
+
+def test_full_state_names_all_50():
+    name_to_code = {
+        "Alabama": "AL", "Alaska": "AK", "Arizona": "AZ", "Arkansas": "AR",
+        "California": "CA", "Colorado": "CO", "Connecticut": "CT", "Delaware": "DE",
+        "Florida": "FL", "Georgia": "GA", "Hawaii": "HI", "Idaho": "ID",
+        "Illinois": "IL", "Indiana": "IN", "Iowa": "IA", "Kansas": "KS",
+        "Kentucky": "KY", "Louisiana": "LA", "Maine": "ME", "Maryland": "MD",
+        "Massachusetts": "MA", "Michigan": "MI", "Minnesota": "MN", "Mississippi": "MS",
+        "Missouri": "MO", "Montana": "MT", "Nebraska": "NE", "Nevada": "NV",
+        "New Hampshire": "NH", "New Jersey": "NJ", "New Mexico": "NM", "New York": "NY",
+        "North Carolina": "NC", "North Dakota": "ND", "Ohio": "OH", "Oklahoma": "OK",
+        "Oregon": "OR", "Pennsylvania": "PA", "Rhode Island": "RI", "South Carolina": "SC",
+        "South Dakota": "SD", "Tennessee": "TN", "Texas": "TX", "Utah": "UT",
+        "Vermont": "VT", "Virginia": "VA", "Washington": "WA", "West Virginia": "WV",
+        "Wisconsin": "WI", "Wyoming": "WY",
+    }
+    for name, code in name_to_code.items():
+        p = {**VALID, "state": name}
+        assert validate_profile(p)["state"] == code, f"'{name}' should map to {code}"
 
 
 def test_children_age_coerced():

@@ -108,14 +108,14 @@ def test_citizenship_green_card_normalizes():
 
 
 def test_out_of_state_raises():
-    p = {**VALID, "state": "WA"}
+    p = {**VALID, "state": "XX"}
     with pytest.raises(ProfileValidationError, match="Unrecognized or unsupported state"):
         validate_profile(p)
 
 
 def test_supported_state_valid():
     result = validate_profile(VALID)
-    assert result["state"] in {"CA", "TX", "NY", "FL"}
+    assert result["state"] == "CA"
 
 
 def test_household_size_clamped_to_max_20():

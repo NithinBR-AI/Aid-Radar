@@ -2,7 +2,7 @@
 
 **An AI agent that finds government benefits you didn't know you qualified for.**
 
-Over $60 billion in federal benefits go unclaimed every year — not because people don't need them, but because they don't know they exist or find the system too complex to navigate. AidRadar asks 10 plain-language questions about your household, cross-references your answers against 8 federal benefit programs across 4 states using real policy microsimulation, and tells you exactly what you qualify for, how much you'd receive monthly, and where to apply.
+Over $60 billion in federal benefits go unclaimed every year — not because people don't need them, but because they don't know they exist or find the system too complex to navigate. AidRadar asks 10 plain-language questions about your household, cross-references your answers against 8 federal benefit programs across all 50 states using real policy microsimulation, and tells you exactly what you qualify for, how much you'd receive monthly, and where to apply.
 
 Built with [Strands Agents SDK](https://github.com/strands-agents) and Amazon Bedrock for the [Agents for Humans](https://agentsforhumans.devpost.com/) hackathon — Good Neighbor Track.
 
@@ -68,7 +68,7 @@ Before PolicyEngine runs, `validate_profile` scrubs PII patterns (account number
 
 - **Adults=0 guard** — if all collected members are children (household size equals child count), the validator raises an error and the intake prompt catches this conversationally before it reaches the pipeline.
 - **Elderly headcount check** — the intake now collects `elderly_count` (how many people in the household are 65+, not just yes/no). If `elderly_count > 0` and none of the listed adults are 65+, the validator checks that household size accounts for all elderly members. Fails with a user-friendly message if not.
-- **Out-of-state hard stop** — if the user's state is not in the supported set (CA, TX, NY, FL), validation raises `ProfileValidationError` immediately. The intake agent ends the interview and tells the user AidRadar doesn't cover their state yet. No silent fallback, no wrong results.
+- **Invalid state hard stop** — if the user's state is not a recognized US state code or name, validation raises `ProfileValidationError` immediately. The intake agent asks the user to clarify. No silent fallback, no wrong results.
 - **Citizenship normalization** — free-text LLM output ("US citizen", "green card", "unauthorized") is mapped to canonical values (`us_citizen`, `permanent_resident`, `qualified_immigrant`, `undocumented`). Unrecognized values (DACA, refugee, TPS) default to `qualified_immigrant` — the broadest eligible non-citizen category — rather than `us_citizen`, avoiding false eligibility grants.
 - **Child age clamping** — children from the `under_5` bucket are clamped to ages 0–4 and `K-12` children to 5–18, catching any intake agent misclassification before PolicyEngine sees the profile.
 - **Flag wiring** — `has_disabled_member`, `has_pregnant_member`, and `elderly_count` are validated and passed through to PolicyEngine. `is_ssi_disabled` (required for SSI — `is_disabled` alone is not sufficient in PolicyEngine) is set alongside `is_disabled`. `is_pregnant` is set on the appropriate adult with an age guard (12–55). If `elderly_count > 0` but fewer than that many adults are 65+, the exact number of missing elderly members are injected as synthetic 70-year-olds — giving PolicyEngine the correct household size for FPL threshold calculation, not just a single placeholder.
@@ -106,16 +106,16 @@ The results page includes a notification preference widget where users can regis
 
 | Program | What It Provides | States | Engine |
 |---------|-----------------|--------|--------|
-| SNAP | Monthly grocery funds on EBT card | CA, TX, NY, FL | PolicyEngine |
-| Medicaid | Free/low-cost health coverage | CA, TX, NY, FL | PolicyEngine |
-| WIC | Nutrition support for pregnant women & children under 5 | CA, TX, NY, FL | PolicyEngine |
-| TANF | Temporary cash assistance for families | CA, TX, NY, FL | PolicyEngine |
-| LIHEAP | Heating & cooling bill assistance | CA, TX, NY, FL | FPL threshold |
-| Free School Meals | Free breakfast & lunch for K-12 | CA, TX, NY, FL | PolicyEngine |
-| Lifeline | Phone/internet discount ($9.25/mo) | CA, TX, NY, FL | PolicyEngine |
-| SSI | Monthly cash for elderly/disabled | CA, TX, NY, FL | PolicyEngine |
+| SNAP | Monthly grocery funds on EBT card | All 50 states | PolicyEngine |
+| Medicaid | Free/low-cost health coverage | All 50 states | PolicyEngine |
+| WIC | Nutrition support for pregnant women & children under 5 | All 50 states | PolicyEngine |
+| TANF | Temporary cash assistance for families | All 50 states | PolicyEngine |
+| LIHEAP | Heating & cooling bill assistance | All 50 states | FPL threshold |
+| Free School Meals | Free breakfast & lunch for K-12 | All 50 states | PolicyEngine |
+| Lifeline | Phone/internet discount ($9.25/mo) | All 50 states | PolicyEngine |
+| SSI | Monthly cash for elderly/disabled | All 50 states | PolicyEngine |
 
-States: **California, Texas, New York, Florida** — covering ~100 million people, the 4 largest states by population.
+States: **All 50 US states** — state-specific application portals and program names included for every state.
 
 ---
 
@@ -353,7 +353,7 @@ Models tested on Mantle:
 ## What's Next
 
 ### Stage 1 — Hackathon MVP (current)
-- Streamlit UI, 4 states, 8 federal programs
+- Streamlit UI, all 50 states, 8 federal programs
 - DynamoDB profile store with 90-day TTL
 - Monitor Agent with real PolicyEngine diff
 - What If simulator for income/household exploration

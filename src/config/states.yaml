@@ -1,24 +1,255 @@
 # Supported states and their specific configurations.
-# AidRadar launches with 4 states covering ~100M people.
-# Add more by creating state override entries in each program's JSON.
+# AidRadar covers all 50 US states.
+# FPL region: AK and HI have separate HHS poverty guidelines; all others use contiguous_48_dc.
+# medicaid_expansion: whether state has adopted ACA Medicaid expansion as of 2024.
 
 supported_states:
+  - code: AL
+    name: Alabama
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: false
+
+  - code: AK
+    name: Alaska
+    fpl_region: alaska
+    medicaid_expansion: true
+
+  - code: AZ
+    name: Arizona
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: AR
+    name: Arkansas
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
   - code: CA
     name: California
     fpl_region: contiguous_48_dc
     medicaid_expansion: true
 
-  - code: TX
-    name: Texas
+  - code: CO
+    name: Colorado
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: CT
+    name: Connecticut
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: DE
+    name: Delaware
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: FL
+    name: Florida
     fpl_region: contiguous_48_dc
     medicaid_expansion: false
+
+  - code: GA
+    name: Georgia
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: HI
+    name: Hawaii
+    fpl_region: hawaii
+    medicaid_expansion: true
+
+  - code: ID
+    name: Idaho
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: IL
+    name: Illinois
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: IN
+    name: Indiana
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: IA
+    name: Iowa
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: KS
+    name: Kansas
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: false
+
+  - code: KY
+    name: Kentucky
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: LA
+    name: Louisiana
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: ME
+    name: Maine
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: MD
+    name: Maryland
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: MA
+    name: Massachusetts
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: MI
+    name: Michigan
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: MN
+    name: Minnesota
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: MS
+    name: Mississippi
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: false
+
+  - code: MO
+    name: Missouri
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: MT
+    name: Montana
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: NE
+    name: Nebraska
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: NV
+    name: Nevada
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: NH
+    name: New Hampshire
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: NJ
+    name: New Jersey
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: NM
+    name: New Mexico
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
 
   - code: NY
     name: New York
     fpl_region: contiguous_48_dc
     medicaid_expansion: true
 
-  - code: FL
-    name: Florida
+  - code: NC
+    name: North Carolina
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: ND
+    name: North Dakota
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: OH
+    name: Ohio
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: OK
+    name: Oklahoma
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: OR
+    name: Oregon
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: PA
+    name: Pennsylvania
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: RI
+    name: Rhode Island
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: SC
+    name: South Carolina
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: SD
+    name: South Dakota
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: TN
+    name: Tennessee
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: false
+
+  - code: TX
+    name: Texas
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: false
+
+  - code: UT
+    name: Utah
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: VT
+    name: Vermont
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: VA
+    name: Virginia
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: WA
+    name: Washington
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: WV
+    name: West Virginia
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: WI
+    name: Wisconsin
+    fpl_region: contiguous_48_dc
+    medicaid_expansion: true
+
+  - code: WY
+    name: Wyoming
     fpl_region: contiguous_48_dc
     medicaid_expansion: false

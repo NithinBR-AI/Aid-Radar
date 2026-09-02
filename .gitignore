@@ -9,3 +9,4 @@ build/
 .coverage
 .pytest_cache/
 htmlcov/
+docs/state_urls_research.md

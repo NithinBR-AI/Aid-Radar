@@ -26,7 +26,7 @@ def test_invalid_profile_returns_error():
 
 def test_out_of_state_returns_error():
     # Unsupported states now raise ProfileValidationError — no silent fallback
-    oh = json.dumps({"state": "OH", "monthly_income": 2000, "adults": [{"age": 30, "income": 0}], "children": []})
+    oh = json.dumps({"state": "XX", "monthly_income": 2000, "adults": [{"age": 30, "income": 0}], "children": []})
     result = eligibility_checker(oh)
     assert result["status"] == "error"
 

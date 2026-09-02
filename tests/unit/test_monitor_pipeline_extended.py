@@ -99,7 +99,7 @@ def test_original_income_preserved():
 
 
 def test_invalid_state_returns_error():
-    bad_profile = {**INTAKE, "state": "OH"}
+    bad_profile = {**INTAKE, "state": "XX"}
     result = run_monitor_check(None, bad_profile, BASELINE)
     assert result.error is not None
     assert "validation" in result.error.lower()

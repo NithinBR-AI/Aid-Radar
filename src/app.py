@@ -343,6 +343,10 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 if "intake_agent" not in st.session_state:
     st.session_state.intake_agent = None
+if "state_selected" not in st.session_state:
+    st.session_state.state_selected = False
+if "state_processing" not in st.session_state:
+    st.session_state.state_processing = False
 if "profile" not in st.session_state:
     st.session_state.profile = None
 if "eligibility_results" not in st.session_state:
@@ -468,14 +472,14 @@ def show_landing():
                 "content": (
                     "Welcome to AidRadar! I'll ask you a few quick questions about your "
                     "household so we can check your eligibility across 8 federal benefit programs.\n\n"
-                    "Let's start — **what state do you live in?** (e.g. California, Texas, New York, Florida)"
+                    "Let's start — **please select your state from the dropdown below.**"
                 ),
             })
             st.rerun()
 
     st.markdown("""
     <div class="footer-text">
-        Covers California, Texas, New York, and Florida — ~100M people.<br>
+        Covers all 50 US states.<br>
         Built with Strands Agents SDK &bull; Amazon Bedrock &bull; PolicyEngine
     </div>
     """, unsafe_allow_html=True)
@@ -499,8 +503,12 @@ def show_intake():
             "SYSTEM NOTE (not shown to user): The user reviewed their profile and wants to correct something. "
             "Here is the profile we captured so far:\n"
             f"{_json.dumps(existing, indent=2)}\n\n"
-            "Ask the user ONE question: 'Which part of your profile would you like to correct? '  "
-            "Once they tell you what to fix, ask only the follow-up questions needed to update that field. "
+            "Ask the user ONE question: 'Which part of your profile would you like to correct?'\n\n"
+            "IMPORTANT — when the user names a field (e.g. 'my state', 'the income', 'household size'), "
+            "that tells you WHICH field to update — it is NOT the new value. "
+            "Respond by asking for the new value: e.g. 'What state would you like to change it to?' "
+            "Wait for their answer before doing anything else. "
+            "Only after they give you the actual new value should you validate and update the field. "
             "When everything is corrected, output the full updated profile JSON block as usual."
         )
         st.session_state.intake_agent = create_intake_agent()
@@ -525,7 +533,60 @@ def show_intake():
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    if user_input := st.chat_input("Type your answer..."):
+    # First turn in a normal intake: show state dropdown instead of text input.
+    # Correction sessions skip this — user types what they want to change.
+    is_correction = st.session_state.get("is_correction_session", False)
+    state_selected = st.session_state.get("state_selected", False)
+    user_message_count = sum(1 for m in st.session_state.messages if m["role"] == "user")
+    show_dropdown = not is_correction and not state_selected and user_message_count == 0
+
+    US_STATES = [
+        "Alabama", "Alaska", "Arizona", "Arkansas", "California", "Colorado",
+        "Connecticut", "Delaware", "Florida", "Georgia", "Hawaii", "Idaho",
+        "Illinois", "Indiana", "Iowa", "Kansas", "Kentucky", "Louisiana",
+        "Maine", "Maryland", "Massachusetts", "Michigan", "Minnesota",
+        "Mississippi", "Missouri", "Montana", "Nebraska", "Nevada",
+        "New Hampshire", "New Jersey", "New Mexico", "New York",
+        "North Carolina", "North Dakota", "Ohio", "Oklahoma", "Oregon",
+        "Pennsylvania", "Rhode Island", "South Carolina", "South Dakota",
+        "Tennessee", "Texas", "Utah", "Vermont", "Virginia", "Washington",
+        "West Virginia", "Wisconsin", "Wyoming",
+    ]
+
+    if show_dropdown:
+        processing = st.session_state.get("state_processing", False)
+        with st.form("state_form", clear_on_submit=True):
+            selected_state = st.selectbox("Select your state", US_STATES, index=None, placeholder="Choose a state...", disabled=processing)
+            submitted = st.form_submit_button("Continue", type="primary", use_container_width=True, disabled=processing)
+        if submitted and selected_state:
+            user_input = selected_state
+            st.session_state.state_selected = True
+            st.session_state.state_processing = True
+            st.session_state.messages.append({"role": "user", "content": user_input})
+            with st.chat_message("user"):
+                st.markdown(user_input)
+
+            if st.session_state.intake_agent is None:
+                with st.spinner("Starting intake agent..."):
+                    st.session_state.intake_agent = create_intake_agent()
+
+            with st.chat_message("assistant"):
+                with st.spinner("Thinking..."):
+                    primed_input = (
+                        "SYSTEM NOTE (not from user): You already greeted the user and asked "
+                        "what state they live in. They selected their state from a dropdown — "
+                        "it is guaranteed to be valid, no confirmation needed. Do NOT re-greet. "
+                        "After acknowledging their state, your NEXT question MUST be household size: "
+                        "'How many people total live in your household, including yourself?' "
+                        "Do not skip this question.\n\n"
+                        f"USER: {user_input}"
+                    )
+                    result = st.session_state.intake_agent(primed_input)
+                    agent_text = str(result)
+
+            st.session_state.messages.append({"role": "assistant", "content": agent_text})
+            st.rerun()
+    elif user_input := st.chat_input("Type your answer..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
             st.markdown(user_input)
@@ -536,22 +597,7 @@ def show_intake():
 
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
-                # On the very first user message in a normal intake (state answer), prepend context
-                # so the agent doesn't re-greet or skip household_size.
-                # Skip this priming in correction mode — the agent already has context.
-                user_count = sum(1 for m in st.session_state.messages if m["role"] == "user")
-                if user_count == 1 and not st.session_state.get("is_correction_session"):
-                    primed_input = (
-                        "SYSTEM NOTE (not from user): You already greeted the user and asked "
-                        "what state they live in. Their answer follows. Do NOT re-greet. "
-                        "After processing their state, your NEXT question MUST be household size: "
-                        "'How many people total live in your household, including yourself?' "
-                        "Do not skip this question.\n\n"
-                        f"USER: {user_input}"
-                    )
-                    result = st.session_state.intake_agent(primed_input)
-                else:
-                    result = st.session_state.intake_agent(user_input)
+                result = st.session_state.intake_agent(user_input)
                 agent_text = str(result)
 
         st.session_state.messages.append({"role": "assistant", "content": agent_text})
@@ -637,6 +683,8 @@ def show_confirm_profile():
             st.session_state.correction_mode = True
             st.session_state.intake_agent = None
             st.session_state.messages = []
+            st.session_state.state_selected = False
+            st.session_state.state_processing = False
             st.rerun()
 
 
