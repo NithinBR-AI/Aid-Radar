@@ -375,12 +375,11 @@ Models tested on Mantle:
 - React/Next.js frontend — mobile-first, accessible on low-end devices and slow connections (the population most likely to need these benefits)
 - Real notifications — email/SMS delivery via Amazon SNS when the Monitor Agent detects eligibility changes (the UI and data model are already in place)
 - User accounts — persistent profiles across sessions with opt-in notification preferences
-- Expand to 10+ states, 15+ programs (CHIP, EITC, Section 8/HCV, utility disconnection protection)
+- Expand to 15+ programs (CHIP, EITC, Section 8/HCV, utility disconnection protection) — all 50 states already covered
 - Caseworker dashboard — social workers manage multiple client profiles and track application status in bulk
 - **Feedback loop** — thumbs up/down on eligibility results stored in DynamoDB; low-rated results flagged for human review and promoted to the eval suite; periodic re-evaluation measures whether prompt or data changes improved accuracy over time. Since PolicyEngine handles the eligibility math, improvement means better prompts, better application data, and better intake question clarity — not model fine-tuning.
 
 ### Stage 3 — Scale
-- All 50 states
 - Multilingual support — Spanish, Mandarin, Vietnamese (languages most common among eligible non-English speakers)
 - Application assistance — pre-fill forms using the household profile collected during intake
 - API layer for integration with government portals and nonprofit CRMs
