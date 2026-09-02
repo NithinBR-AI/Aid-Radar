@@ -347,6 +347,8 @@ if "state_selected" not in st.session_state:
     st.session_state.state_selected = False
 if "state_processing" not in st.session_state:
     st.session_state.state_processing = False
+if "pending_state" not in st.session_state:
+    st.session_state.pending_state = None
 if "profile" not in st.session_state:
     st.session_state.profile = None
 if "eligibility_results" not in st.session_state:
@@ -500,16 +502,21 @@ def show_intake():
         existing = st.session_state.get("profile") or {}
         import json as _json
         correction_seed = (
-            "SYSTEM NOTE (not shown to user): The user reviewed their profile and wants to correct something. "
-            "Here is the profile we captured so far:\n"
+            "SYSTEM NOTE (not shown to user): The user reviewed their profile and wants to correct one or more fields. "
+            "Here is their complete confirmed profile:\n"
             f"{_json.dumps(existing, indent=2)}\n\n"
-            "Ask the user ONE question: 'Which part of your profile would you like to correct?'\n\n"
-            "IMPORTANT — when the user names a field (e.g. 'my state', 'the income', 'household size'), "
-            "that tells you WHICH field to update — it is NOT the new value. "
-            "Respond by asking for the new value: e.g. 'What state would you like to change it to?' "
-            "Wait for their answer before doing anything else. "
-            "Only after they give you the actual new value should you validate and update the field. "
-            "When everything is corrected, output the full updated profile JSON block as usual."
+            "RULES FOR THIS CORRECTION SESSION — follow them exactly, no exceptions:\n"
+            "1. Ask ONE question: 'Which part of your profile would you like to correct?'\n"
+            "2. When the user names a field (e.g. 'my state', 'income', 'household size'), "
+            "that is the FIELD NAME — not the new value. Ask: 'What would you like to change it to?'\n"
+            "3. When the user gives the new value, update ONLY that field in the profile above. "
+            "ALL other fields stay exactly as they are — do NOT ask about them.\n"
+            "4. After updating the field, ask: 'Is there anything else you'd like to correct?'\n"
+            "5. If the user says no (or similar), immediately output the full updated profile as a JSON block. "
+            "Do NOT re-ask any question that was already answered. Do NOT restart the intake.\n"
+            "6. If the user says yes, go back to rule 2 and handle the next field.\n"
+            "CRITICAL: You already have a complete profile. Your only job is to apply the user's corrections "
+            "and output the updated JSON. Never ask for information that is already in the profile above."
         )
         st.session_state.intake_agent = create_intake_agent()
         with st.spinner("Loading your profile for correction..."):
@@ -559,33 +566,39 @@ def show_intake():
             selected_state = st.selectbox("Select your state", US_STATES, index=None, placeholder="Choose a state...", disabled=processing)
             submitted = st.form_submit_button("Continue", type="primary", use_container_width=True, disabled=processing)
         if submitted and selected_state:
-            user_input = selected_state
-            st.session_state.state_selected = True
             st.session_state.state_processing = True
-            st.session_state.messages.append({"role": "user", "content": user_input})
-            with st.chat_message("user"):
-                st.markdown(user_input)
-
-            if st.session_state.intake_agent is None:
-                with st.spinner("Starting intake agent..."):
-                    st.session_state.intake_agent = create_intake_agent()
-
-            with st.chat_message("assistant"):
-                with st.spinner("Thinking..."):
-                    primed_input = (
-                        "SYSTEM NOTE (not from user): You already greeted the user and asked "
-                        "what state they live in. They selected their state from a dropdown — "
-                        "it is guaranteed to be valid, no confirmation needed. Do NOT re-greet. "
-                        "After acknowledging their state, your NEXT question MUST be household size: "
-                        "'How many people total live in your household, including yourself?' "
-                        "Do not skip this question.\n\n"
-                        f"USER: {user_input}"
-                    )
-                    result = st.session_state.intake_agent(primed_input)
-                    agent_text = str(result)
-
-            st.session_state.messages.append({"role": "assistant", "content": agent_text})
+            st.session_state.pending_state = selected_state
             st.rerun()
+
+    # Rerun 2: process the pending state now that the form is rendered disabled
+    if st.session_state.get("pending_state") and not st.session_state.get("state_selected"):
+        user_input = st.session_state.pending_state
+        st.session_state.state_selected = True
+        st.session_state.messages.append({"role": "user", "content": user_input})
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        if st.session_state.intake_agent is None:
+            with st.spinner("Starting intake agent..."):
+                st.session_state.intake_agent = create_intake_agent()
+
+        with st.chat_message("assistant"):
+            with st.spinner("Thinking..."):
+                primed_input = (
+                    "SYSTEM NOTE (not from user): You already greeted the user and asked "
+                    "what state they live in. They selected their state from a dropdown — "
+                    "it is guaranteed to be valid, no confirmation needed. Do NOT re-greet. "
+                    "After acknowledging their state, your NEXT question MUST be household size: "
+                    "'How many people total live in your household, including yourself?' "
+                    "Do not skip this question.\n\n"
+                    f"USER: {user_input}"
+                )
+                result = st.session_state.intake_agent(primed_input)
+                agent_text = str(result)
+
+        st.session_state.messages.append({"role": "assistant", "content": agent_text})
+        st.session_state.pending_state = None
+        st.rerun()
     elif user_input := st.chat_input("Type your answer..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
         with st.chat_message("user"):
@@ -685,6 +698,7 @@ def show_confirm_profile():
             st.session_state.messages = []
             st.session_state.state_selected = False
             st.session_state.state_processing = False
+            st.session_state.pending_state = None
             st.rerun()
 
 
@@ -1044,6 +1058,33 @@ def _build_pdf_report(profile: dict, eligibility_data: dict, report_text: str) -
     pdf.kv_row("Citizenship status", citizenship)
     pdf.kv_row("Currently enrolled in", enrolled)
 
+    # ── Data confidence ───────────────────────────────────────────────────
+    conf_level, conf_issues = _compute_confidence(profile)
+    AMBER = (160, 92, 0)
+    RED = (185, 28, 28)
+    conf_color = GREEN if conf_level == "High" else (AMBER if conf_level == "Medium" else RED)
+    pdf.section_title("Data Confidence")
+    pdf.set_x(18)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(*conf_color)
+    pdf.cell(0, 6, _safe(f"{conf_level} confidence"), new_x="LMARGIN", new_y="NEXT")
+    if not conf_issues:
+        pdf.set_x(18)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(*GREY)
+        pdf.cell(0, 5, "All profile fields are complete and specific - estimates are as accurate as possible.", new_x="LMARGIN", new_y="NEXT")
+    else:
+        for issue in conf_issues:
+            pdf.set_x(18)
+            pdf.set_font("Helvetica", "", 8)
+            pdf.set_text_color(*DARK)
+            pdf.multi_cell(0, 4, _safe(f"- {issue}"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(18)
+    pdf.set_font("Helvetica", "I", 7)
+    pdf.set_text_color(*GREY)
+    pdf.cell(0, 5, "Confidence reflects data completeness, not model uncertainty. PolicyEngine is deterministic.", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(*DARK)
+
     # ── Eligible programs ─────────────────────────────────────────────────
     eligible = eligibility_data.get("eligible_programs", [])
     pdf.section_title(f"Eligible Programs ({eligible_count})")
@@ -1114,6 +1155,78 @@ def _build_pdf_report(profile: dict, eligibility_data: dict, report_text: str) -
 # ---------------------------------------------------------------------------
 # Results dashboard
 # ---------------------------------------------------------------------------
+def _compute_confidence(profile: dict) -> tuple[str, list[str]]:
+    """Return (level, reasons) where level is 'High'/'Medium'/'Low'."""
+    issues = []
+
+    if profile.get("income_is_approximate"):
+        issues.append("Income entered as an estimate — exact amounts improve SNAP and TANF calculations")
+
+    if profile.get("citizenship_status") is None:
+        issues.append("Citizenship status not provided — some programs (SSI, TANF) require citizenship for full eligibility")
+
+    children_under5 = profile.get("children_under_5") or []
+    if any(c.get("age") in (2,) for c in children_under5):
+        # age 2 is the silent default from intake.txt — it was never stated by user
+        issues.append("Child age(s) under 5 used a default value — actual ages may shift WIC eligibility window")
+
+    children_k12 = profile.get("children_k12") or []
+    if any(c.get("age") == 8 for c in children_k12):
+        # age 8 is the silent default from intake.txt
+        issues.append("K–12 child age(s) used a default value — actual ages may affect free school meal calculations")
+
+    elderly_count = profile.get("elderly_count", 0) or 0
+    applicant_age = profile.get("applicant_age") or 0
+    if elderly_count > 0 and applicant_age < 65:
+        issues.append("Elderly household member present but not the primary applicant — SSI/Medicaid eligibility is based on the elderly member's separate income")
+
+    level = "High" if len(issues) == 0 else ("Medium" if len(issues) <= 2 else "Low")
+    return level, issues
+
+
+def _render_confidence_indicator(profile: dict) -> None:
+    level, issues = _compute_confidence(profile)
+    color_map = {"High": "#1A7F4E", "Medium": "#A05C00", "Low": "#B91C1C"}
+    bg_map = {"High": "#ECFDF5", "Medium": "#FFFBEB", "Low": "#FEF2F2"}
+    border_map = {"High": "#6EE7B7", "Medium": "#FCD34D", "Low": "#FCA5A5"}
+    icon_map = {"High": "✓", "Medium": "⚠", "Low": "!"}
+
+    color = color_map[level]
+    bg = bg_map[level]
+    border = border_map[level]
+    icon = icon_map[level]
+
+    label = f"{icon} Data confidence: **{level}**"
+    if issues:
+        label += f" — {len(issues)} factor{'s' if len(issues) > 1 else ''} may affect precision"
+
+    with st.expander(label, expanded=(level == "Low")):
+        if not issues:
+            st.markdown(
+                f"<div style='color:{color};font-size:0.9rem;'>All profile fields are complete and specific — eligibility estimates are as accurate as possible.</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                f"<div style='color:#374151;font-size:0.875rem;margin-bottom:0.5rem;'>"
+                "These factors reduce precision of the estimates. Correcting them improves accuracy:</div>",
+                unsafe_allow_html=True,
+            )
+            for issue in issues:
+                st.markdown(
+                    f"<div style='background:{bg};border-left:3px solid {border};padding:0.4rem 0.75rem;"
+                    f"border-radius:0 6px 6px 0;margin-bottom:0.4rem;font-size:0.875rem;color:#374151;'>"
+                    f"{issue}</div>",
+                    unsafe_allow_html=True,
+                )
+        st.markdown(
+            "<div style='font-size:0.78rem;color:#6B7280;margin-top:0.5rem;'>"
+            "AidRadar uses PolicyEngine microsimulation — a deterministic model. Confidence reflects "
+            "data completeness, not model uncertainty.</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def _parse_eligibility_json(text: str) -> dict | None:
     # Try fenced blocks first
     pattern = r"```(?:json)?\s*(\{.*?\})\s*```"
@@ -1187,6 +1300,9 @@ def show_results():
         </div>
         """, unsafe_allow_html=True)
         st.caption("Estimates based on PolicyEngine microsimulation — verify eligibility with the program office before applying.")
+
+        if st.session_state.profile:
+            _render_confidence_indicator(st.session_state.profile)
 
         st.markdown("""
         <div style="background:#EEF1F5;border:1px solid #B0C4D8;border-radius:12px;padding:0.9rem 1.2rem;margin-bottom:0.6rem;display:flex;align-items:center;gap:0.8rem;">

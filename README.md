@@ -97,6 +97,16 @@ The agent only runs when there is an actual change; it does not send "nothing ch
 ### What If Simulator
 The results page has income and household size sliders. Each slider change calls PolicyEngine directly (no LLM, no agent) and re-renders eligibility results in under a second. This lets users explore "what if I take a second job?" or "what if I have another child?" without re-running the full pipeline.
 
+### Data Confidence Indicator
+The results page shows a collapsible **data confidence indicator** — High / Medium / Low — directly below the benefit estimate. It inspects the submitted profile for factors that reduce precision and explains each one in plain language:
+
+- **Income approximate** — estimate entered (e.g. "around $2,000") rather than exact; affects SNAP and TANF thresholds
+- **Citizenship status missing** — user declined; SSI, TANF, and some Medicaid pathways require citizenship
+- **Child ages defaulted** — intake used silent defaults (age 2 for under-5, age 8 for K–12) when the user didn't specify; shifts WIC eligibility windows
+- **Elderly member not the applicant** — PolicyEngine eligibility is computed on the primary applicant; a separate elderly household member may have different income and eligibility
+
+Confidence is purely a data-completeness metric — it reflects what the user told us, not uncertainty in the PolicyEngine model, which is deterministic.
+
 ### Notification Preference (UI)
 The results page includes a notification preference widget where users can register an email or phone number for change alerts. The preference is stored in session state — actual SNS delivery is a Stage 2 feature, but the UI and data model are in place.
 
@@ -169,7 +179,7 @@ aid-radar/
 │       ├── programs/               # Per-program JSON (URLs, documents, state overrides)
 │       └── policy_changelog.json   # Curated log of federal/state rule changes (used by check_policy_change)
 ├── tests/
-│   ├── unit/                       # 115 unit tests — all dependencies mocked
+│   ├── unit/                       # 117 unit tests — all dependencies mocked
 │   │   ├── test_profile_validator.py
 │   │   ├── test_profile_validator_extended.py
 │   │   ├── test_eligibility_checker.py
@@ -357,8 +367,9 @@ Models tested on Mantle:
 - DynamoDB profile store with 90-day TTL
 - Monitor Agent with real PolicyEngine diff
 - What If simulator for income/household exploration
+- Data confidence indicator (High/Medium/Low) with per-factor explanations
 - Mock notification preference UI (email/SMS) with session state storage
-- 115 unit tests + 16 integration tests + 10-profile eval suite
+- 117 unit tests + 16 integration tests + 10-profile eval suite
 
 ### Stage 2 — Pilot Product
 - React/Next.js frontend — mobile-first, accessible on low-end devices and slow connections (the population most likely to need these benefits)
